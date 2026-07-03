@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose'
+import { IReminderConfig } from './Task'
 
 // --- SUBJECT INTERFACE & SCHEMA ---
 export interface ISubject extends Document {
@@ -34,6 +35,7 @@ export interface IAssignment extends Document {
   status: 'Todo' | 'In Progress' | 'Completed'
   grade?: string
   fileUrl?: string // Cloudinary pdf/image URL
+  reminderConfigs: IReminderConfig[] // Email reminder configurations
   createdAt: Date
   updatedAt: Date
 }
@@ -48,6 +50,17 @@ const AssignmentSchema: Schema<IAssignment> = new Schema(
     status: { type: String, enum: ['Todo', 'In Progress', 'Completed'], default: 'Todo' },
     grade: { type: String, required: false },
     fileUrl: { type: String, required: false },
+    reminderConfigs: {
+      type: [
+        {
+          enabled: { type: Boolean, default: true },
+          timeBefore: { type: Number, required: true },
+          notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
+          emailSent: { type: Boolean, default: false },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 )
@@ -61,6 +74,7 @@ export interface IExam extends Document {
   syllabus?: string
   marksObtained?: number
   maxMarks?: number
+  reminderConfigs: IReminderConfig[] // Email reminder configurations
   createdAt: Date
   updatedAt: Date
 }
@@ -74,6 +88,17 @@ const ExamSchema: Schema<IExam> = new Schema(
     syllabus: { type: String, required: false },
     marksObtained: { type: Number, required: false },
     maxMarks: { type: Number, required: false },
+    reminderConfigs: {
+      type: [
+        {
+          enabled: { type: Boolean, default: true },
+          timeBefore: { type: Number, required: true },
+          notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
+          emailSent: { type: Boolean, default: false },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 )

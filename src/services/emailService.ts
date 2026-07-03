@@ -263,6 +263,119 @@ export async function sendInvoiceDueReminder(email: string, name: string, invoic
   return sendEmailSafely(mailOptions)
 }
 
+// ==================== EXAM & ASSIGNMENT REMINDERS ====================
+
+export async function sendExamReminder(email: string, name: string, examType: string, subject: string, examDate: Date, hoursUntil: number) {
+  const formattedDate = new Date(examDate).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  const mailOptions = {
+    from: `"Solo Leveling College Hub" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
+    to: email,
+    subject: `📚 Exam Reminder: ${subject} ${examType}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; background-color: #ffffff; color: #333333;">
+        <h2 style="color: #7c3aed; text-align: center;">📚 Exam Reminder</h2>
+        <p>Hello ${name},</p>
+        <p>Your upcoming exam is approaching:</p>
+        <div style="background-color: #faf5ff; padding: 15px; border-left: 4px solid #7c3aed; border-radius: 4px; margin: 20px 0;">
+          <strong style="font-size: 16px;">${subject} - ${examType}</strong>
+          <p style="margin: 10px 0 0 0; color: #581c87;">📅 Date & Time: ${formattedDate}</p>
+          <p style="margin: 5px 0 0 0; color: #581c87;">⏱️ Time remaining: ${hoursUntil} hours</p>
+        </div>
+        <p>Make sure you're prepared with all your study materials. Good luck with your exam! 🍀</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${siteUrl}/dashboard/college" style="background-color: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Exam Details</a>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
+        <p style="font-size: 12px; color: #999; text-align: center;">This is an automated reminder from Solo Leveling. Manage your exam schedule in the college section.</p>
+      </div>
+    `,
+  }
+
+  return sendEmailSafely(mailOptions)
+}
+
+export async function sendAssignmentReminder(email: string, name: string, assignmentTitle: string, subject: string, dueDate: Date, hoursUntil: number) {
+  const formattedDate = new Date(dueDate).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  const mailOptions = {
+    from: `"Solo Leveling College Hub" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
+    to: email,
+    subject: `📝 Assignment Reminder: ${assignmentTitle}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; background-color: #ffffff; color: #333333;">
+        <h2 style="color: #0891b2; text-align: center;">📝 Assignment Due Soon</h2>
+        <p>Hello ${name},</p>
+        <p>Your assignment submission deadline is approaching:</p>
+        <div style="background-color: #ecfdf5; padding: 15px; border-left: 4px solid #0891b2; border-radius: 4px; margin: 20px 0;">
+          <strong style="font-size: 16px;">${assignmentTitle}</strong>
+          <p style="margin: 10px 0 0 0; color: #164e63;">📚 Subject: ${subject}</p>
+          <p style="margin: 5px 0 0 0; color: #164e63;">📅 Due: ${formattedDate}</p>
+          <p style="margin: 5px 0 0 0; color: #164e63;">⏱️ Time remaining: ${hoursUntil} hours</p>
+        </div>
+        <p>Don't miss this deadline! Complete and submit your assignment now to maintain your grades.</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${siteUrl}/dashboard/college" style="background-color: #0891b2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Assignment</a>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
+        <p style="font-size: 12px; color: #999; text-align: center;">This is an automated reminder from Solo Leveling. Manage your assignments in the college section.</p>
+      </div>
+    `,
+  }
+
+  return sendEmailSafely(mailOptions)
+}
+
+// ==================== EVENT/DEADLINE REMINDERS ====================
+
+export async function sendCustomEventReminder(email: string, name: string, eventTitle: string, eventTime: Date, description?: string) {
+  const formattedTime = new Date(eventTime).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+
+  const mailOptions = {
+    from: `"Solo Leveling" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
+    to: email,
+    subject: `🔔 Reminder: ${eventTitle}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; background-color: #ffffff; color: #333333;">
+        <h2 style="color: #3b82f6; text-align: center;">🔔 Event Reminder</h2>
+        <p>Hello ${name},</p>
+        <p>You have an upcoming event reminder:</p>
+        <div style="background-color: #eff6ff; padding: 15px; border-left: 4px solid #3b82f6; border-radius: 4px; margin: 20px 0;">
+          <strong style="font-size: 16px;">${eventTitle}</strong>
+          <p style="margin: 10px 0 0 0; color: #1e40af;">📅 Time: ${formattedTime}</p>
+          ${description ? `<p style="margin: 5px 0 0 0; color: #1e40af;">📝 Details: ${description}</p>` : ''}
+        </div>
+        <p>Make sure you're ready for this event. Mark it on your calendar!</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${siteUrl}/dashboard" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Calendar</a>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
+        <p style="font-size: 12px; color: #999; text-align: center;">This is an automated reminder from Solo Leveling. Manage your reminders in dashboard settings.</p>
+      </div>
+    `,
+  }
+
+  return sendEmailSafely(mailOptions)
+}
+
 // Helper function to safely send emails
 async function sendEmailSafely(mailOptions: any) {
   // Fallback console log for development

@@ -1,5 +1,12 @@
 import mongoose, { Schema, Document, Model } from 'mongoose'
 
+export interface IReminderConfig {
+  enabled: boolean
+  timeBefore: number // minutes before deadline
+  notificationType: 'email' | 'in-app' | 'both'
+  emailSent?: boolean
+}
+
 export interface ITask extends Document {
   user: mongoose.Types.ObjectId
   title: string
@@ -16,8 +23,9 @@ export interface ITask extends Document {
   notes?: string
   progress: number // 0 to 100
   recurring: boolean
-  reminderOffset?: number // minutes before deadline, e.g., 10, 30, 60, 1440
-  reminderSent?: boolean // Track if email reminder was sent
+  reminderOffset?: number // minutes before deadline, e.g., 10, 30, 60, 1440 (deprecated, use reminderConfigs)
+  reminderSent?: boolean // Track if email reminder was sent (deprecated)
+  reminderConfigs: IReminderConfig[] // New: multiple reminders per task
   attachments: string[] // Cloudinary URLs
   project?: mongoose.Types.ObjectId // Reference to Project
   createdAt: Date
@@ -104,11 +112,22 @@ const TaskSchema: Schema<ITask> = new Schema(
     reminderOffset: {
       type: Number,
       required: false,
-      default: 0, // 0 means no active email reminder
+      default: 0, // 0 means no active email reminder (deprecated)
     },
     reminderSent: {
       type: Boolean,
       default: false,
+    },
+    reminderConfigs: {
+      type: [
+        {
+          enabled: { type: Boolean, default: true },
+          timeBefore: { type: Number, required: true }, // minutes
+          notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
+          emailSent: { type: Boolean, default: false },
+        },
+      ],
+      default: [],
     },
     attachments: {
       type: [String],

@@ -623,6 +623,7 @@ export default function CollegeClient({
                 <div className="space-y-1">
                   <Label htmlFor="exType">Exam Type</Label>
                   <select id="exType" value={examForm.examType} onChange={(e) => setExamForm((prev) => ({ ...prev, examType: e.target.value as any }))} className="flex h-10 w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <option value="Internal">Test (class test)</option>
                     <option value="Internal">Internal (Midterm)</option>
                     <option value="Semester">Semester (Finals)</option>
                   </select>

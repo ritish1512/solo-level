@@ -15,7 +15,10 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowLeft,
-  ChevronRight
+  ChevronRight,
+  Bell,
+  Mail,
+  Trash
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -28,6 +31,7 @@ import {
   deleteTaskAction, 
   updateTaskStatusAction 
 } from '@/actions/taskActions'
+import { getReminderPresets, formatMinutesToTime } from '@/services/reminderService'
 
 interface TasksClientProps {
   initialTasks: any[]
@@ -66,6 +70,11 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
     reminderOffset: '0',
   })
 
+  // Reminder configurations state
+  const [reminderConfigs, setReminderConfigs] = useState<Array<{ enabled: boolean; timeBefore: number; notificationType: 'email' | 'in-app' | 'both' }>>([])
+  const [showAddReminder, setShowAddReminder] = useState(false)
+  const [newReminderTime, setNewReminderTime] = useState('30')
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('All')
@@ -82,6 +91,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       const res = await createTaskAction({
         ...formData,
         tags: parsedTags,
+        reminderConfigs: reminderConfigs.filter((r) => r.enabled),
       })
 
       if (res.success) {
@@ -107,6 +117,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       const res = await updateTaskAction(selectedTask._id, {
         ...formData,
         tags: parsedTags,
+        reminderConfigs: reminderConfigs.filter((r) => r.enabled),
       })
 
       if (res.success) {
@@ -162,6 +173,8 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       notes: task.notes || '',
       reminderOffset: task.reminderOffset?.toString() || '0',
     })
+    // Load existing reminder configs
+    setReminderConfigs(task.reminderConfigs || [])
   }
 
   const resetForm = () => {
@@ -178,6 +191,32 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       notes: '',
       reminderOffset: '0',
     })
+    setReminderConfigs([])
+    setShowAddReminder(false)
+  }
+
+  const addReminder = () => {
+    const minutes = parseInt(newReminderTime)
+    if (!isNaN(minutes) && minutes > 0) {
+      setReminderConfigs((prev) => [
+        ...prev,
+        { enabled: true, timeBefore: minutes, notificationType: 'both' },
+      ])
+      setNewReminderTime('30')
+      setShowAddReminder(false)
+    }
+  }
+
+  const removeReminder = (index: number) => {
+    setReminderConfigs((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const toggleReminderNotificationType = (index: number, type: 'email' | 'in-app' | 'both') => {
+    setReminderConfigs((prev) => [
+      ...prev.slice(0, index),
+      { ...prev[index], notificationType: type },
+      ...prev.slice(index + 1),
+    ])
   }
 
   // Filtering Logic
@@ -514,20 +553,128 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                   </div>
 
                   <div className="space-y-1">
-                    <Label htmlFor="taskReminder">Email Reminder Offset</Label>
+                    <Label htmlFor="taskReminder">Quick Reminder</Label>
                     <select
                       id="taskReminder"
                       value={formData.reminderOffset}
                       onChange={(e) => setFormData((prev) => ({ ...prev, reminderOffset: e.target.value }))}
                       className="flex h-10 w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      <option value="0">No active reminder</option>
+                      <option value="0">No quick reminder</option>
                       <option value="10">10 minutes before</option>
                       <option value="30">30 minutes before</option>
                       <option value="60">1 hour before</option>
                       <option value="1440">1 day before</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Advanced Reminder Configuration Section */}
+                <div className="border-t border-border/40 pt-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Bell className="w-4 h-4 text-amber-500" />
+                      <Label className="text-sm font-semibold">Email Reminders</Label>
+                    </div>
+                    {!showAddReminder && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowAddReminder(true)}
+                        className="text-xs"
+                      >
+                        <Plus className="w-3 h-3 mr-1" /> Add Reminder
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Add New Reminder Form */}
+                  {showAddReminder && (
+                    <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 space-y-3">
+                      <div className="flex gap-2">
+                        <div className="flex-1">
+                          <Label htmlFor="reminderMinutes" className="text-xs">Minutes before deadline</Label>
+                          <Input
+                            id="reminderMinutes"
+                            type="number"
+                            min="1"
+                            value={newReminderTime}
+                            onChange={(e) => setNewReminderTime(e.target.value)}
+                            placeholder="e.g., 30"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            onClick={addReminder}
+                          >
+                            Add
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowAddReminder(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* List of configured reminders */}
+                  {reminderConfigs.length > 0 ? (
+                    <div className="space-y-2">
+                      {reminderConfigs.map((reminder, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3 rounded-lg border border-border bg-background/50 flex items-center justify-between hover:border-amber-300 dark:hover:border-amber-700 transition-colors"
+                        >
+                          <div className="flex items-center gap-3 flex-1">
+                            <Mail className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                            <div className="text-sm">
+                              <p className="font-medium text-zinc-900 dark:text-zinc-100">
+                                {formatMinutesToTime(reminder.timeBefore)}
+                              </p>
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                                Send {reminder.notificationType} notification
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <select
+                              value={reminder.notificationType}
+                              onChange={(e) =>
+                                toggleReminderNotificationType(idx, e.target.value as 'email' | 'in-app' | 'both')
+                              }
+                              className="h-8 text-xs rounded border border-border bg-background px-2 outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                              <option value="email">Email Only</option>
+                              <option value="in-app">In-App Only</option>
+                              <option value="both">Both</option>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => removeReminder(idx)}
+                              className="p-1 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
+                            >
+                              <Trash className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 italic">
+                      No reminders configured. Add one to get email notifications before the deadline.
+                    </p>
+                  )}
                 </div>
 
                 {/* Footer notes */}

@@ -3,9 +3,10 @@
 import mongoose from 'mongoose'
 import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
-import Task, { ITask } from '@/models/Task'
+import Task, { ITask, IReminderConfig } from '@/models/Task'
 import User from '@/models/User'
 import Reminder from '@/models/Reminder'
+import { createTaskReminders, updateTaskReminders, deleteTaskReminders } from '@/services/reminderService'
 
 export interface TaskResponse {
   success: boolean
@@ -41,6 +42,7 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       tags,
       notes,
       reminderOffset,
+      reminderConfigs,
     } = data
 
     if (!title || !deadline) {
@@ -48,6 +50,24 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
     }
 
     const parsedDeadline = new Date(deadline)
+
+    // Prepare reminder configurations
+    let taskReminderConfigs: IReminderConfig[] = []
+    
+    // Support new reminderConfigs array format
+    if (reminderConfigs && Array.isArray(reminderConfigs) && reminderConfigs.length > 0) {
+      taskReminderConfigs = reminderConfigs
+    }
+    // Fallback to old reminderOffset format for backward compatibility
+    else if (reminderOffset && Number(reminderOffset) > 0) {
+      taskReminderConfigs = [
+        {
+          enabled: true,
+          timeBefore: Number(reminderOffset),
+          notificationType: 'both',
+        },
+      ]
+    }
 
     const newTask = await Task.create({
       user: new mongoose.Types.ObjectId(session.user.id),
@@ -65,21 +85,13 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       progress: 0,
       recurring: false,
       reminderOffset: reminderOffset ? Number(reminderOffset) : 0,
+      reminderConfigs: taskReminderConfigs,
       attachments: [],
     })
 
-    // If reminderOffset is configured, schedule a reminder
-    if (reminderOffset && Number(reminderOffset) > 0) {
-      const triggerTime = new Date(parsedDeadline.getTime() - Number(reminderOffset) * 60 * 1000)
-      if (triggerTime > new Date()) {
-        await Reminder.create({
-          user: new mongoose.Types.ObjectId(session.user.id),
-          title: `Task Reminder: "${title}" is due soon!`,
-          triggerTime,
-          isSent: false,
-          channel: 'both',
-        })
-      }
+    // Create reminder entries for each configured reminder
+    if (taskReminderConfigs.length > 0) {
+      await createTaskReminders(newTask._id.toString(), taskReminderConfigs)
     }
 
     return {
@@ -160,6 +172,7 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
       tags,
       notes,
       reminderOffset,
+      reminderConfigs,
     } = data
 
     const originalDeadline = task.deadline.getTime()
@@ -183,25 +196,31 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
     const oldReminderOffset = task.reminderOffset
     task.reminderOffset = reminderOffset !== undefined ? Number(reminderOffset) : task.reminderOffset
 
+    // Update reminder configurations
+    if (reminderConfigs && Array.isArray(reminderConfigs)) {
+      task.reminderConfigs = reminderConfigs
+    }
+
     await task.save()
 
-    // Re-schedule reminder if deadline or offset changed
+    // Re-schedule reminders if deadline or configs changed
     const currentDeadlineTime = task.deadline.getTime()
-    if (currentDeadlineTime !== originalDeadline || task.reminderOffset !== originalOffset) {
-      // Delete old reminders for this task title (using a title-based match or ref if needed)
-      await Reminder.deleteMany({
-        user: session.user.id,
-        title: `Task Reminder: "${task.title}" is due soon!`,
-        isSent: false,
-      })
+    if (currentDeadlineTime !== originalDeadline || task.reminderOffset !== originalOffset || reminderConfigs) {
+      // Delete old reminders for this task
+      await deleteTaskReminders(id)
 
-      // Add new reminder if offset configured
-      if (task.reminderOffset && task.reminderOffset > 0) {
+      // Create new reminders based on configs
+      if (reminderConfigs && Array.isArray(reminderConfigs) && reminderConfigs.length > 0) {
+        await createTaskReminders(id, reminderConfigs)
+      } else if (task.reminderOffset && task.reminderOffset > 0) {
+        // Fallback to old reminder offset system
         const triggerTime = new Date(currentDeadlineTime - task.reminderOffset * 60 * 1000)
         if (triggerTime > new Date()) {
           await Reminder.create({
             user: new mongoose.Types.ObjectId(session.user.id),
             title: `Task Reminder: "${task.title}" is due soon!`,
+            relatedTo: 'task',
+            relatedId: new mongoose.Types.ObjectId(id),
             triggerTime,
             isSent: false,
             channel: 'both',
@@ -231,11 +250,8 @@ export async function deleteTaskAction(id: string): Promise<TaskResponse> {
       return { success: false, error: 'Task not found or access denied.' }
     }
 
-    // Delete pending reminders associated with this task title
-    await Reminder.deleteMany({
-      user: session.user.id,
-      title: `Task Reminder: "${task.title}" is due soon!`,
-      isSent: false,
+    // Delete all reminders associated with this task
+    await deleteTaskReminders(id)
     })
 
     await task.deleteOne()

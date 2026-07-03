@@ -3,8 +3,11 @@ import mongoose, { Schema, Document, Model } from 'mongoose'
 export interface IReminder extends Document {
   user: mongoose.Types.ObjectId
   title: string
+  relatedTo?: 'task' | 'exam' | 'assignment' | 'event' | 'custom'
+  relatedId?: mongoose.Types.ObjectId // Reference to task, exam, or assignment
   triggerTime: Date
   isSent: boolean
+  emailSent?: boolean // Track if email was specifically sent
   channel: 'both' | 'email' | 'in-app'
   createdAt: Date
   updatedAt: Date
@@ -22,11 +25,24 @@ const ReminderSchema: Schema<IReminder> = new Schema(
       required: [true, 'Reminder title is required'],
       trim: true,
     },
+    relatedTo: {
+      type: String,
+      enum: ['task', 'exam', 'assignment', 'event', 'custom'],
+      default: 'custom',
+    },
+    relatedId: {
+      type: Schema.Types.ObjectId,
+      required: false,
+    },
     triggerTime: {
       type: Date,
       required: [true, 'Trigger time is required'],
     },
     isSent: {
+      type: Boolean,
+      default: false,
+    },
+    emailSent: {
       type: Boolean,
       default: false,
     },
