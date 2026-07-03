@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
+import { auth } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
 import { ThemeToggleButton } from '@/components/ThemeToggleButton'
 import { ArrowRight, Shield, Award, Calendar, Zap, LayoutDashboard, Brain } from 'lucide-react'
@@ -46,7 +47,13 @@ const features = [
   },
 ]
 
-export default function LandingPage() {
+export default async function LandingPage() {
+  const session = await auth()
+  const isAuthenticated = Boolean(session?.user)
+  const dashboardHref = '/dashboard'
+  const primaryCtaHref = isAuthenticated ? dashboardHref : '/register'
+  const secondaryCtaHref = isAuthenticated ? dashboardHref : '/login'
+
   return (
     <div className="relative flex min-h-dvh flex-col items-center justify-between overflow-x-hidden bg-slate-50/50 transition-colors duration-300 dark:bg-background">
       {/* Enhanced contrast background grid */}
@@ -64,12 +71,20 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
           <ThemeToggleButton />
-          <Link href="/login">
-            <Button variant="ghost" size="sm" className="hidden text-zinc-700 dark:text-zinc-200 min-[390px]:inline-flex">Sign In</Button>
-          </Link>
-          <Link href="/register">
-            <Button variant="primary" size="sm">Get Started</Button>
-          </Link>
+          {isAuthenticated ? (
+            <Link href={dashboardHref}>
+              <Button variant="primary" size="sm">Dashboard</Button>
+            </Link>
+          ) : (
+            <>
+              <Link href="/login">
+                <Button variant="ghost" size="sm" className="hidden text-zinc-700 dark:text-zinc-200 min-[390px]:inline-flex">Sign In</Button>
+              </Link>
+              <Link href="/register">
+                <Button variant="primary" size="sm">Get Started</Button>
+              </Link>
+            </>
+          )}
         </div>
       </header>
 
@@ -91,14 +106,14 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
-            <Link href="/register">
+            <Link href={primaryCtaHref}>
               <Button variant="primary" size="lg" className="w-full sm:w-auto gap-2 shadow-md shadow-indigo-600/10 dark:shadow-none">
-                Level Up Now <ArrowRight className="h-4 w-4" />
+                {isAuthenticated ? 'Continue to Dashboard' : 'Level Up Now'} <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
-            <Link href="/login">
+            <Link href={secondaryCtaHref}>
               <Button variant="outline" size="lg" className="w-full sm:w-auto bg-white hover:bg-zinc-50 text-zinc-800 border-zinc-200 dark:bg-transparent dark:text-zinc-200 dark:border-border">
-                Access Dashboard
+                {isAuthenticated ? 'Open Dashboard' : 'Access Dashboard'}
               </Button>
             </Link>
           </div>
