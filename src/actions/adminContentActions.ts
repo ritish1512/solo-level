@@ -32,7 +32,7 @@ export async function fetchSystemContent(key: string): Promise<any> {
       title: 'Solo Leveling',
       description: 'Your command center for tasks, habits, projects, notes, and productivity.',
       keywords: 'productivity, habits, gamification, developer, solo leveling',
-      canonicalUrl: 'https://sololeveling.vercel.app/',
+      canonicalUrl: 'https://sololevelingguider.vercel.app/',
     }
   }
 

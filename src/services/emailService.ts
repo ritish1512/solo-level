@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
   },
 })
 
-const siteUrl = process.env.NEXTAUTH_URL || 'https://sololeveling.vercel.app/'
+const siteUrl = process.env.NEXTAUTH_URL || 'https://sololevelingguider.vercel.app/'
 
 export async function sendVerificationEmail(email: string, name: string, token: string) {
   const verificationUrl = `${siteUrl}/verify?token=${token}&email=${encodeURIComponent(email)}`

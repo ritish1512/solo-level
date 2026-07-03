@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sololeveling.vercel.app/'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sololevelingguider.vercel.app/'
 
 const publicRoutes = ['', '/login', '/register', '/forgot-password']
 

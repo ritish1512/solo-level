@@ -69,7 +69,7 @@ export async function GET(request: Request) {
               </div>
               <p>Please log in to your dashboard to complete your tasks and level up your skills.</p>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.NEXTAUTH_URL || 'https://sololeveling.vercel.app/'}/dashboard" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Open Dashboard</a>
+                <a href="${process.env.NEXTAUTH_URL || 'https://sololevelingguider.vercel.app/'}/dashboard" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Open Dashboard</a>
               </div>
               <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
               <p style="font-size: 12px; color: #999; text-align: center;">You received this email because you enabled reminders for a task or assignment. If this wasn't you, ignore this message.</p>

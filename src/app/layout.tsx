@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from '@/components/providers'
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sololeveling.vercel.app/'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sololevelingguider.vercel.app/'
 const siteName = 'Solo Leveling'
 const siteDescription =
   'Manage tasks, track habits, visualize goals, organize college coursework, track finances, and structure freelancing projects with your personalized second brain.'

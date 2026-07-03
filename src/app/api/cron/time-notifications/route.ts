@@ -231,7 +231,7 @@ export async function GET(request: Request) {
               </div>
               <p>Ensure your project is on track and all deliverables are ready. Review your project details in the dashboard.</p>
               <div style="text-align: center; margin: 30px 0;">
-                <a href="${process.env.NEXTAUTH_URL || 'https://sololeveling.vercel.app/'}/dashboard/projects" style="background-color: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Projects</a>
+                <a href="${process.env.NEXTAUTH_URL || 'https://sololevelingguider.vercel.app/'}/dashboard/projects" style="background-color: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Projects</a>
               </div>
               <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
               <p style="font-size: 12px; color: #999; text-align: center;">This is a project deadline reminder from Solo Leveling.</p>
