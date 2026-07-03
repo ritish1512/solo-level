@@ -1,6 +1,5 @@
 import React from 'react'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import { Subject, Assignment, Exam } from '@/models/College'
 import CollegeClient from './CollegeClient'
@@ -8,7 +7,7 @@ import CollegeClient from './CollegeClient'
 export const dynamic = 'force-dynamic'
 
 export default async function CollegePage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null

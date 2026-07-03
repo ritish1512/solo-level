@@ -1,8 +1,7 @@
 'use server'
 
 import nodemailer from 'nodemailer'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Reminder from '@/models/Reminder'
 import User from '@/models/User'
@@ -19,7 +18,7 @@ const transporter = nodemailer.createTransport({
 })
 
 async function checkAdminAuth() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session || !session.user || session.user.role !== 'admin') {
     throw new Error('Unauthorized: Admin access required')
   }

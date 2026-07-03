@@ -1,11 +1,11 @@
-import { NextAuthOptions } from 'next-auth'
+import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import GoogleProvider from 'next-auth/providers/google'
 import bcrypt from 'bcrypt'
 import dbConnect from './mongodb'
 import User from '@/models/User'
 
-export const authOptions: NextAuthOptions = {
+export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID || '',
@@ -24,7 +24,7 @@ export const authOptions: NextAuthOptions = {
 
         await dbConnect()
 
-        const user = await User.findOne({ email: credentials.email.toLowerCase() })
+        const user = await User.findOne({ email: (credentials.email as string).toLowerCase() })
 
         if (!user) {
           throw new Error('No user found with this email')
@@ -40,7 +40,7 @@ export const authOptions: NextAuthOptions = {
           )
         }
 
-        const isPasswordValid = await bcrypt.compare(credentials.password, user.password)
+        const isPasswordValid = await bcrypt.compare(credentials.password as string, user.password)
 
         if (!isPasswordValid) {
           throw new Error('Incorrect password')
@@ -71,12 +71,11 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!existingUser) {
-          // Create user if they don't exist
           const newUser = await User.create({
             name: profile?.name || user.name || 'Google User',
             email: profile?.email?.toLowerCase(),
-            image: (profile?.image || user.image || undefined) as string | undefined,
-            emailVerified: new Date(), // Google emails are already verified
+            image: (profile?.picture || user.image || undefined) as string | undefined,
+            emailVerified: new Date(),
             role: 'user',
             xp: 0,
             level: 1,
@@ -89,8 +88,6 @@ export const authOptions: NextAuthOptions = {
           user.id = existingUser._id.toString()
           user.role = existingUser.role
           
-          // If the existing user was registered via credentials but hadn't verified their email,
-          // logging in via Google confirms they own the email address.
           if (!existingUser.emailVerified) {
             existingUser.emailVerified = new Date()
             await existingUser.save()
@@ -99,30 +96,25 @@ export const authOptions: NextAuthOptions = {
       }
       return true
     },
-        async jwt({ token, user, trigger, session }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
-        token.id = user.id
-        token.email = user.email
-        token.name = user.name
-        token.image = user.image
-        token.role = user.role
-        // ✅ Return immediately on login so it skips the heavy DB fetch below
+        token.id = user.id as string
+        token.email = (user.email as string) || ""
+        token.name = user.name as string
+        token.image = user.image as string
+        token.role = (user as any).role 
         return token 
       }
       
-      // Update session info dynamically if triggered
       if (trigger === 'update' && session) {
         token.name = session.name || token.name
         token.image = session.image || token.image
       }
 
-      // Periodically refresh the user's role/details from DB in JWT
-      // ✅ Only run if token.id exists to prevent a hanging query on undefined IDs
       if (token.id) {
         try {
           await dbConnect()
-          // Using lean() makes Mongoose return plain objects, speeding up the execution
-          const dbUser = await User.findById(token.id).select('role name image email').lean()
+          const dbUser = await User.findById(token.id).select('role name image email').lean() as any
           if (dbUser) {
             token.role = dbUser.role
             token.name = dbUser.name
@@ -153,7 +145,7 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: 'jwt',
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 30 * 24 * 60 * 60,
   },
-  secret: process.env.NEXTAUTH_SECRET,
-}
+  secret: process.env.AUTH_SECRET,
+})

@@ -1,6 +1,5 @@
 import React from 'react'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Project from '@/models/Project'
 import Bug from '@/models/Bug'
@@ -10,7 +9,7 @@ import ProjectsClient from './ProjectsClient'
 export const dynamic = 'force-dynamic'
 
 export default async function ProjectsPage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null

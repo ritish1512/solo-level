@@ -1,8 +1,7 @@
 'use server'
 
 import mongoose from 'mongoose'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import ContentIdea, { ContentPlatform, ContentStatus } from '@/models/ContentIdea'
 
@@ -24,7 +23,7 @@ export type ContentIdeaResponse = {
 }
 
 async function checkAuth() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session?.user?.id) {
     throw new Error('Unauthorized. Please log in.')
   }

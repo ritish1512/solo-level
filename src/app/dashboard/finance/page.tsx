@@ -1,6 +1,5 @@
 import React from 'react'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Transaction from '@/models/Transaction'
 import Invoice from '@/models/Invoice'
@@ -9,7 +8,7 @@ import FinanceClient from './FinanceClient'
 export const dynamic = 'force-dynamic'
 
 export default async function FinancePage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null

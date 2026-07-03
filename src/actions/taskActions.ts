@@ -1,8 +1,7 @@
 'use server'
 
 import mongoose from 'mongoose'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Task, { ITask } from '@/models/Task'
 import User from '@/models/User'
@@ -18,7 +17,7 @@ export interface TaskResponse {
 
 // Check session authentication helper
 async function checkAuth() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session || !session.user) {
     throw new Error('Unauthorized. Please log in.')
   }

@@ -1,7 +1,6 @@
 "use server";
 import mongoose from 'mongoose'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Habit, { IHabit } from '@/models/Habit'
 import User from '@/models/User'
@@ -17,7 +16,7 @@ export interface HabitResponse {
 
 // Helper to check user session
 async function checkAuth() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session || !session.user) {
     throw new Error('Unauthorized. Please log in.')
   }

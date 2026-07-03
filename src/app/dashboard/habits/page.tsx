@@ -1,6 +1,5 @@
 import React from 'react'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Habit from '@/models/Habit'
 import HabitsClient from './HabitsClient'
@@ -8,7 +7,7 @@ import HabitsClient from './HabitsClient'
 export const dynamic = 'force-dynamic'
 
 export default async function HabitsPage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null

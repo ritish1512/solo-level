@@ -1,7 +1,6 @@
 import React from 'react'
 import Image from 'next/image'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import User from '@/models/User'
 import { Trophy, Award, Flame, User as UserIcon, Check } from 'lucide-react'
@@ -19,7 +18,7 @@ interface UserRank {
 }
 
 export default async function LeaderboardPage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null

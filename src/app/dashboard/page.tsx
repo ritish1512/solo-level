@@ -1,6 +1,5 @@
 import React from 'react'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import User from '@/models/User'
 import Task from '@/models/Task'
@@ -11,7 +10,7 @@ import DashboardClient from './DashboardClient'
 export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null // Handled by layout redirect

@@ -1,8 +1,7 @@
 'use server'
 
 import mongoose from 'mongoose'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Transaction from '@/models/Transaction'
 import Invoice from '@/models/Invoice'
@@ -20,7 +19,7 @@ export interface FinanceResponse {
 
 // Session authentication check
 async function checkAuth() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session || !session.user) {
     throw new Error('Unauthorized. Please log in.')
   }

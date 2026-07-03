@@ -1,6 +1,5 @@
 import React from 'react'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import ContentIdea from '@/models/ContentIdea'
 import ContentClient from './ContentClient'
@@ -8,7 +7,7 @@ import ContentClient from './ContentClient'
 export const dynamic = 'force-dynamic'
 
 export default async function ContentPage() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   
   if (!session || !session.user) {
     return null

@@ -1,7 +1,6 @@
 'use server'
 
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Task from '@/models/Task'
 import Project from '@/models/Project'
@@ -9,7 +8,7 @@ import User from '@/models/User'
 import { logAdminAction } from '@/services/auditLogService'
 
 async function checkAdminAuth() {
-  const session = await getServerSession(authOptions)
+  const session = await auth()
   if (!session || !session.user || session.user.role !== 'admin') {
     throw new Error('Unauthorized: Admin access required')
   }
