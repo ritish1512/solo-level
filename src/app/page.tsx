@@ -108,12 +108,12 @@ export default async function LandingPage() {
           <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">
             <Link href={primaryCtaHref}>
               <Button variant="primary" size="lg" className="w-full sm:w-auto gap-2 shadow-md shadow-indigo-600/10 dark:shadow-none">
-                {isAuthenticated ? 'Continue to Dashboard' : 'Level Up Now'} <ArrowRight className="h-4 w-4" />
+                Level Up Now <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
             <Link href={secondaryCtaHref}>
               <Button variant="outline" size="lg" className="w-full sm:w-auto bg-white hover:bg-zinc-50 text-zinc-800 border-zinc-200 dark:bg-transparent dark:text-zinc-200 dark:border-border">
-                {isAuthenticated ? 'Open Dashboard' : 'Access Dashboard'}
+                Access Dashboard
               </Button>
             </Link>
           </div>
