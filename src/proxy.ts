@@ -9,7 +9,7 @@ export async function proxy(request: NextRequest) {
   if (path.startsWith('/admin') || path.startsWith('/api/admin')) {
     const token = await getToken({
       req: request,
-      secret: process.env.NEXTAUTH_SECRET,
+      secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
     })
 
     // If no token exists, redirect to login (or return 401 for API)
