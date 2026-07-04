@@ -130,6 +130,9 @@ export default function LoginForm() {
             <CardDescription className="text-center">
               Welcome back. Enter your credentials to access your second brain.
             </CardDescription>
+            <CardDescription className="text-center text-xs">
+              If you didn't receive a verification email, please check your spam folder or request a new one.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">

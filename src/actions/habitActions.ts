@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Habit, { IHabit } from '@/models/Habit'
 import User from '@/models/User'
-import { isHabitDueForDate, normalizeHabitRecurrence } from '@/lib/habitRecurrence'
+import { getHabitDueDatesBetween, HabitRecurrence, isHabitDueForDate, normalizeHabitRecurrence } from '@/lib/habitRecurrence'
 
 export interface HabitResponse {
   success: boolean
@@ -25,77 +25,50 @@ async function checkAuth() {
 }
 
 // Helper to calculate streaks from YYYY-MM-DD string arrays
-export async function calculateStreak(completedDates: string[]): Promise<{ currentStreak: number; longestStreak: number }> {
-  if (completedDates.length === 0) {
+export async function calculateStreak(
+  completedDates: string[],
+  recurrence?: HabitRecurrence | null
+): Promise<{ currentStreak: number; longestStreak: number }> {
+  const uniqueDates = Array.from(new Set(completedDates.filter(Boolean))).sort((a, b) => a.localeCompare(b))
+  if (uniqueDates.length === 0) {
     return { currentStreak: 0, longestStreak: 0 }
   }
 
-  // Parse, filter unique values, and sort dates chronologically descending (newest first)
-  const uniqueDates = Array.from(new Set(completedDates)).sort((a, b) => b.localeCompare(a))
-  
   const today = new Date()
-  const todayStr = today.toISOString().split('T')[0]
-  
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split('T')[0]
+  today.setHours(0, 0, 0, 0)
+  const firstDate = new Date(uniqueDates[0])
+  firstDate.setHours(0, 0, 0, 0)
 
-  // If neither today nor yesterday is in the completed dates list, current streak is broken (0)
-  const hasCompletedRecent = uniqueDates.includes(todayStr) || uniqueDates.includes(yesterdayStr)
-  
-  let currentStreak = 0
+  const dueDates = getHabitDueDatesBetween(recurrence, firstDate, today)
+  const completedSet = new Set(uniqueDates)
+
   let longestStreak = 0
-  let tempStreak = 0
-  let expectedDate = null
+  let currentStreak = 0
+  let run = 0
 
-  // 1. Calculate Longest Streak (scanning chronologically ascending: oldest first)
-  const ascendingDates = [...uniqueDates].reverse()
-  for (let i = 0; i < ascendingDates.length; i++) {
-    const current = new Date(ascendingDates[i])
-    
-    if (expectedDate === null) {
-      tempStreak = 1
+  for (const dateStr of dueDates) {
+    if (completedSet.has(dateStr)) {
+      run++
     } else {
-      const diffTime = current.getTime() - expectedDate.getTime()
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
-
-      if (diffDays === 1) {
-        tempStreak++
-      } else if (diffDays > 1) {
-        tempStreak = 1
-      }
+      longestStreak = Math.max(longestStreak, run)
+      run = 0
     }
-    
-    if (tempStreak > longestStreak) {
-      longestStreak = tempStreak
-    }
-    
-    expectedDate = current
   }
 
-  // 2. Calculate Current Streak (scanning descending: newest first)
-  if (hasCompletedRecent) {
-    // Start count from the most recent completed date
-    let lastDate = new Date(uniqueDates[0])
-    currentStreak = 1
+  longestStreak = Math.max(longestStreak, run)
 
-    for (let i = 1; i < uniqueDates.length; i++) {
-      const current = new Date(uniqueDates[i])
-      const diffTime = lastDate.getTime() - current.getTime()
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
-
-      if (diffDays === 1) {
-        currentStreak++
-        lastDate = current
-      } else if (diffDays > 1) {
-        break // Gap found, stop counting
-      }
+  for (let i = dueDates.length - 1; i >= 0; i--) {
+    const dateStr = dueDates[i]
+    if (completedSet.has(dateStr)) {
+      currentStreak++
+    } else {
+      break
     }
   }
 
   return {
     currentStreak,
-    longestStreak: Math.max(longestStreak, currentStreak),
+    longestStreak,
   }
 }
 
@@ -196,12 +169,12 @@ export async function toggleHabitDateAction(habitId: string, dateStr: string): P
     }
 
     const targetDate = new Date(`${dateStr}T00:00:00`)
-    const recurrence = normalizeHabitRecurrence({
+    const recurrenceObj = normalizeHabitRecurrence({
       type: habit.recurrenceType ?? habit.recurrence?.type,
       days: habit.recurrenceDays ?? habit.recurrence?.days,
     })
 
-    if (!isHabitDueForDate(recurrence, targetDate)) {
+    if (!isHabitDueForDate(recurrenceObj, targetDate)) {
       return { success: false, error: 'This habit is not scheduled for that date.' }
     }
 
@@ -214,10 +187,10 @@ export async function toggleHabitDateAction(habitId: string, dateStr: string): P
       habit.completedDates.splice(index, 1)
     }
 
-    // Recalculate streak values
-    const { currentStreak, longestStreak } = await calculateStreak(habit.completedDates)
+    // Recalculate streak values using the habit recurrence schedule
+    const { currentStreak, longestStreak } = await calculateStreak(habit.completedDates, recurrenceObj)
     habit.streak = currentStreak
-    habit.longestStreak = longestStreak
+    habit.longestStreak = Math.max(habit.longestStreak ?? 0, longestStreak)
 
     await habit.save()
 

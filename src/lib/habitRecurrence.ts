@@ -64,3 +64,27 @@ export function isHabitDueForDate(recurrence: HabitRecurrence | null | undefined
       return true
   }
 }
+
+export function getHabitDueDatesBetween(
+  recurrence: HabitRecurrence | null | undefined,
+  startDate: Date,
+  endDate: Date
+): string[] {
+  const normalized = normalizeHabitRecurrence(recurrence)
+  const dates: string[] = []
+  const current = new Date(startDate)
+  current.setHours(0, 0, 0, 0)
+
+  const end = new Date(endDate)
+  end.setHours(0, 0, 0, 0)
+
+  while (current <= end) {
+    if (isHabitDueForDate(normalized, current)) {
+      const dateString = current.toISOString().split('T')[0]
+      dates.push(dateString)
+    }
+    current.setDate(current.getDate() + 1)
+  }
+
+  return dates
+}
