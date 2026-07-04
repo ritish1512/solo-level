@@ -23,6 +23,7 @@ export default function LoginForm() {
     password: '',
   })
   const [errors, setErrors] = useState<{ [key: string]: string }>({})
+  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard'
 
   useEffect(() => {
     const emailParam = searchParams.get('email')
@@ -92,11 +93,11 @@ export default function LoginForm() {
             toast('Please verify your email before logging in. A link was sent to your inbox.', 'warning')
           } else {
             // This will now cleanly display "No user found with this email" or "Incorrect password"
-            toast(cleanMessage, 'error') 
+            toast(cleanMessage, 'error')
           }
         } else {
           toast('Logged in successfully!', 'success')
-          router.push('/dashboard')
+          router.push(callbackUrl)
           router.refresh()
         }
       } catch (err) {
@@ -106,7 +107,7 @@ export default function LoginForm() {
   }
 
   const handleGoogleLogin = () => {
-    signIn('google', { callbackUrl: '/dashboard' })
+    signIn('google', { callbackUrl })
   }
 
   return (
