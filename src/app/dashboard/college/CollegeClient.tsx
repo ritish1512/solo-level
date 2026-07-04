@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useTransition } from 'react'
+import React, { useState, useTransition, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Plus, 
@@ -46,6 +46,53 @@ export default function CollegeClient({
   const [subjects, setSubjects] = useState<any[]>(initialSubjects)
   const [assignments, setAssignments] = useState<any[]>(initialAssignments)
   const [exams, setExams] = useState<any[]>(initialExams)
+
+  // Caching college states in IndexedDB for offline reliability
+  useEffect(() => {
+    async function loadCache() {
+      try {
+        const { getFromStore, saveToStore } = await import('@/lib/offlineDb')
+        const cachedSubjects = await getFromStore('cache_store', 'subjects')
+        if (cachedSubjects && Array.isArray(cachedSubjects)) setSubjects(cachedSubjects)
+        else await saveToStore('cache_store', 'subjects', initialSubjects)
+
+        const cachedAssignments = await getFromStore('cache_store', 'assignments')
+        if (cachedAssignments && Array.isArray(cachedAssignments)) setAssignments(cachedAssignments)
+        else await saveToStore('cache_store', 'assignments', initialAssignments)
+
+        const cachedExams = await getFromStore('cache_store', 'exams')
+        if (cachedExams && Array.isArray(cachedExams)) setExams(cachedExams)
+        else await saveToStore('cache_store', 'exams', initialExams)
+      } catch (err) {
+        console.error('Failed to load college caches:', err)
+      }
+    }
+    void loadCache()
+  }, [initialSubjects, initialAssignments, initialExams])
+
+  useEffect(() => {
+    async function saveSubjects() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'subjects', subjects)
+    }
+    void saveSubjects()
+  }, [subjects])
+
+  useEffect(() => {
+    async function saveAssignments() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'assignments', assignments)
+    }
+    void saveAssignments()
+  }, [assignments])
+
+  useEffect(() => {
+    async function saveExams() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'exams', exams)
+    }
+    void saveExams()
+  }, [exams])
 
   // Dialog triggers
   const [showAddSubject, setShowAddSubject] = useState(false)
@@ -116,12 +163,28 @@ export default function CollegeClient({
   const handleAddSubject = (e: React.FormEvent) => {
     e.preventDefault()
     startTransition(async () => {
-      const res = await createSubjectAction(subjectForm)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'createSubjectAction',
+        createSubjectAction,
+        [subjectForm],
+        (args, tempId) => ({
+          subject: {
+            _id: tempId,
+            ...args[0],
+            attendedClasses: 0,
+            totalClasses: 0,
+            classNotes: [],
+          }
+        })
+      )
       if (res.success) {
         toast('Subject added!', 'success')
-        setSubjects((prev) => [...prev, res.subject])
-        setAttendanceNotes((prev) => ({ ...prev, [res.subject._id]: '' }))
-        setAttendedToday((prev) => ({ ...prev, [res.subject._id]: false }))
+        if (res.subject) {
+          setSubjects((prev) => [...prev, res.subject])
+          setAttendanceNotes((prev) => ({ ...prev, [res.subject._id]: '' }))
+          setAttendedToday((prev) => ({ ...prev, [res.subject._id]: false }))
+        }
         setSubjectForm({ name: '', code: '' })
         setShowAddSubject(false)
       } else {
@@ -133,7 +196,13 @@ export default function CollegeClient({
   const handleDeleteSubject = (id: string) => {
     if (!confirm('Warning: Deleting this subject will also delete associated assignments and exams. Continue?')) return
     startTransition(async () => {
-      const res = await deleteSubjectAction(id)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'deleteSubjectAction',
+        deleteSubjectAction,
+        [id],
+        () => ({ success: true })
+      )
       if (res.success) {
         toast(res.message || 'Subject deleted', 'info')
         setSubjects((prev) => prev.filter((s) => s._id !== id))
@@ -149,10 +218,51 @@ export default function CollegeClient({
     startTransition(async () => {
       const attended = attendedToday[id] || false
       const note = attendanceNotes[id]?.trim() || ''
-      const res = await logSubjectAttendanceAction(id, attended, note)
+
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'logSubjectAttendanceAction',
+        logSubjectAttendanceAction,
+        [id, attended, note],
+        (args) => {
+          const sub = subjects.find(s => s._id === args[0])
+          const todayStr = new Date().toISOString().slice(0, 10)
+          const oldLog = sub?.classNotes?.find((n: any) => new Date(n.date).toISOString().slice(0, 10) === todayStr)
+          
+          let attendedDiff = 0
+          let totalDiff = 0
+          let newNotes = sub?.classNotes ? [...sub.classNotes] : []
+
+          if (oldLog) {
+            if (oldLog.attended !== args[1]) {
+              attendedDiff = args[1] ? 1 : -1
+            }
+            newNotes = newNotes.map((n: any) => 
+              new Date(n.date).toISOString().slice(0, 10) === todayStr 
+                ? { ...n, attended: args[1], note: args[2], date: new Date() } 
+                : n
+            )
+          } else {
+            totalDiff = 1
+            attendedDiff = args[1] ? 1 : 0
+            newNotes.push({ date: new Date(), attended: args[1], note: args[2] })
+          }
+
+          return {
+            subject: {
+              ...sub,
+              attendedClasses: Math.max(0, (sub?.attendedClasses || 0) + attendedDiff),
+              totalClasses: (sub?.totalClasses || 0) + totalDiff,
+              classNotes: newNotes,
+            }
+          }
+        }
+      )
       if (res.success) {
         toast('Today\'s class log saved successfully.', 'success')
-        setSubjects((prev) => prev.map((s) => (s._id === id ? res.subject : s)))
+        if (res.subject) {
+          setSubjects((prev) => prev.map((s) => (s._id === id ? res.subject : s)))
+        }
       } else {
         toast(res.error || 'Failed to save log', 'error')
       }
@@ -163,7 +273,20 @@ export default function CollegeClient({
   const handleAddAssignment = (e: React.FormEvent) => {
     e.preventDefault()
     startTransition(async () => {
-      const res = await createAssignmentAction(assignmentForm)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'createAssignmentAction',
+        createAssignmentAction,
+        [assignmentForm],
+        (args, tempId) => ({
+          assignment: {
+            _id: tempId,
+            ...args[0],
+            status: 'Todo',
+            createdAt: new Date().toISOString(),
+          }
+        })
+      )
       if (res.success) {
         toast('Assignment logged!', 'success')
         // We populate the subject locally
@@ -184,7 +307,13 @@ export default function CollegeClient({
   const handleToggleAssignment = (id: string, currentStatus: string) => {
     const nextStatus = currentStatus === 'Completed' ? 'Todo' : 'Completed'
     startTransition(async () => {
-      const res = await updateAssignmentStatusAction(id, nextStatus)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'updateAssignmentStatusAction',
+        updateAssignmentStatusAction,
+        [id, nextStatus],
+        () => ({ success: true })
+      )
       if (res.success) {
         setAssignments((prev) =>
           prev.map((a) => (a._id === id ? { ...a, status: nextStatus } : a))
@@ -197,7 +326,13 @@ export default function CollegeClient({
 
   const handleDeleteAssignment = (id: string) => {
     startTransition(async () => {
-      const res = await deleteAssignmentAction(id)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'deleteAssignmentAction',
+        deleteAssignmentAction,
+        [id],
+        () => ({ success: true })
+      )
       if (res.success) {
         setAssignments((prev) => prev.filter((a) => a._id !== id))
         toast('Assignment deleted.', 'info')
@@ -211,7 +346,19 @@ export default function CollegeClient({
   const handleAddExam = (e: React.FormEvent) => {
     e.preventDefault()
     startTransition(async () => {
-      const res = await createExamAction(examForm)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'createExamAction',
+        createExamAction,
+        [examForm],
+        (args, tempId) => ({
+          exam: {
+            _id: tempId,
+            ...args[0],
+            createdAt: new Date().toISOString(),
+          }
+        })
+      )
       if (res.success) {
         toast('Exam scheduled!', 'success')
         const matchedSub = subjects.find((s) => s._id === examForm.subjectId)
@@ -230,7 +377,18 @@ export default function CollegeClient({
 
   const handleUpdateExamMarks = (id: string, marks: string, max: string) => {
     startTransition(async () => {
-      const res = await updateExamAction(id, Number(marks), Number(max))
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'updateExamAction',
+        updateExamAction,
+        [id, Number(marks), Number(max)],
+        (args) => ({
+          exam: {
+            marksObtained: args[1],
+            maxMarks: args[2],
+          }
+        })
+      )
       if (res.success) {
         setExams((prev) => prev.map((ex) => (ex._id === id ? { ...ex, marksObtained: Number(marks), maxMarks: Number(max) } : ex)))
         toast('Grades logged!', 'success')

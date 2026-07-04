@@ -58,6 +58,9 @@ export const metadata: Metadata = {
   manifest: '/manifest.webmanifest',
 }
 
+import PwaRegister from '@/components/PwaRegister'
+import OfflineSyncBanner from '@/components/dashboard/OfflineSyncBanner'
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -99,7 +102,9 @@ export default function RootLayout({
           Skip to content
         </a>
         <Providers>
+          <PwaRegister />
           {children}
+          <OfflineSyncBanner />
         </Providers>
         <script
           type="application/ld+json"

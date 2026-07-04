@@ -199,4 +199,108 @@ export async function deleteTaskReminders(taskId: string): Promise<void> {
   }
 }
 
+/**
+ * Create reminders for an assignment
+ */
+export async function createAssignmentReminders(
+  assignmentId: string
+): Promise<void> {
+  try {
+    await dbConnect()
+    const { Assignment } = await import('@/models/College')
+    const assignment = await Assignment.findById(assignmentId).populate('subject')
+    if (!assignment) return
+
+    const defaultConfigs = [
+      { enabled: true, timeBefore: 1440, notificationType: 'both' as const }, // 1 day
+      { enabled: true, timeBefore: 120, notificationType: 'both' as const },  // 2 hours
+    ]
+
+    assignment.reminderConfigs = defaultConfigs
+    await assignment.save()
+
+    for (const config of defaultConfigs) {
+      const triggerTime = new Date(assignment.dueDate.getTime() - config.timeBefore * 60 * 1000)
+      if (triggerTime > new Date()) {
+        const subjectName = (assignment.subject as any)?.name || 'Subject'
+        await Reminder.create({
+          user: assignment.user,
+          title: `Assignment Alert: "${assignment.title}" (${subjectName}) is due soon!`,
+          relatedTo: 'assignment',
+          relatedId: assignment._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Create Assignment Reminders Error:', error)
+  }
+}
+
+/**
+ * Delete reminders for an assignment
+ */
+export async function deleteAssignmentReminders(assignmentId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(assignmentId) })
+  } catch (error) {
+    console.error('Delete Assignment Reminders Error:', error)
+  }
+}
+
+/**
+ * Create reminders for an exam
+ */
+export async function createExamReminders(
+  examId: string
+): Promise<void> {
+  try {
+    await dbConnect()
+    const { Exam } = await import('@/models/College')
+    const exam = await Exam.findById(examId).populate('subject')
+    if (!exam) return
+
+    const defaultConfigs = [
+      { enabled: true, timeBefore: 1440, notificationType: 'both' as const }, // 1 day
+      { enabled: true, timeBefore: 120, notificationType: 'both' as const },  // 2 hours
+    ]
+
+    exam.reminderConfigs = defaultConfigs
+    await exam.save()
+
+    for (const config of defaultConfigs) {
+      const triggerTime = new Date(exam.date.getTime() - config.timeBefore * 60 * 1000)
+      if (triggerTime > new Date()) {
+        const subjectName = (exam.subject as any)?.name || 'Subject'
+        await Reminder.create({
+          user: exam.user,
+          title: `Exam Alert: "${exam.examType} Exam" (${subjectName}) is scheduled soon!`,
+          relatedTo: 'exam',
+          relatedId: exam._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Create Exam Reminders Error:', error)
+  }
+}
+
+/**
+ * Delete reminders for an exam
+ */
+export async function deleteExamReminders(examId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(examId) })
+  } catch (error) {
+    console.error('Delete Exam Reminders Error:', error)
+  }
+}
+
 export { getReminderPresets, formatMinutesToTime } from '@/lib/reminderUtils'

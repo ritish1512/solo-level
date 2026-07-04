@@ -22,8 +22,9 @@ export default async function DashboardPage() {
   const userId = session.user.id
   const todayStr = new Date().toISOString().split('T')[0]
 
-  // Fetch initial profile stats
-  const user = await User.findById(userId).select('name email image xp level streak longestStreak emailVerified')
+  // Fetch initial profile stats and update daily activity streak
+  const { checkAndUpdateUserStreak } = await import('@/lib/userStreak')
+  const user = await checkAndUpdateUserStreak(userId)
   const serializedUser = user ? JSON.parse(JSON.stringify(user)) : null
 
   // Fetch incomplete tasks sorted by deadline

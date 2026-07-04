@@ -67,8 +67,8 @@ export async function GET(request: Request) {
         const reminderTime = deadlineTime - (task.reminderOffset ?? 0) * 60 * 1000
         const currentTime = now.getTime()
 
-        // Check if it's time to send the reminder (within 5 minute window to avoid duplicates)
-        if (currentTime >= reminderTime && currentTime <= reminderTime + 5 * 60 * 1000) {
+        // Check if it's time to send the reminder (after reminderTime but before deadline, prevented from repeating by task.reminderSent)
+        if (currentTime >= reminderTime && currentTime < deadlineTime) {
           const hoursUntil = Math.ceil((deadlineTime - currentTime) / (1000 * 60 * 60))
           await sendTaskDeadlineReminder(user.email, user.name, task.title, task.deadline, hoursUntil)
           task.reminderSent = true
@@ -160,8 +160,8 @@ export async function GET(request: Request) {
 
         if (lastEmailDay === today) continue
 
-        // Send at 8 AM
-        if (now.getHours() === 8 && now.getMinutes() < 5) {
+        // Send on or after 8 AM (prevented from repeating today by user.lastHabitReminderDate checks)
+        if (now.getHours() >= 8) {
           const habitNames = habits.map((h) => h.name)
           await sendDailyHabitReminder(user.email, user.name, habitNames)
           user.lastHabitReminderDate = now

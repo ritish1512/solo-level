@@ -4,6 +4,12 @@ import mongoose from 'mongoose'
 import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import { Subject, Assignment, Exam } from '@/models/College'
+import {
+  createAssignmentReminders,
+  deleteAssignmentReminders,
+  createExamReminders,
+  deleteExamReminders
+} from '@/services/reminderService'
 
 export interface CollegeResponse {
   success: boolean
@@ -169,7 +175,16 @@ export async function deleteSubjectAction(id: string): Promise<CollegeResponse> 
       return { success: false, error: 'Subject not found.' }
     }
 
-    // Cascade delete assignments and exams belonging to this subject
+    // Cascade delete assignments and exams belonging to this subject, including their reminders
+    const assignments = await Assignment.find({ subject: id })
+    for (const a of assignments) {
+      await deleteAssignmentReminders(a._id.toString())
+    }
+    const exams = await Exam.find({ subject: id })
+    for (const e of exams) {
+      await deleteExamReminders(e._id.toString())
+    }
+
     await Assignment.deleteMany({ subject: id })
     await Exam.deleteMany({ subject: id })
     await subject.deleteOne()
@@ -205,6 +220,9 @@ export async function createAssignmentAction(data: any): Promise<CollegeResponse
       status: 'Todo',
       fileUrl,
     })
+
+    // Create default reminders for the assignment (1 day before, 2 hours before)
+    await createAssignmentReminders(newAssignment._id.toString())
 
     return {
       success: true,
@@ -252,6 +270,14 @@ export async function updateAssignmentStatusAction(id: string, status: 'Todo' | 
     }
     await assignment.save()
 
+    // Delete reminders if completed, or re-create them if reopened
+    if (status === 'Completed') {
+      await deleteAssignmentReminders(id)
+    } else {
+      await deleteAssignmentReminders(id)
+      await createAssignmentReminders(id)
+    }
+
     return {
       success: true,
       message: 'Assignment updated!',
@@ -268,6 +294,8 @@ export async function deleteAssignmentAction(id: string): Promise<CollegeRespons
     const session = await checkAuth()
     await dbConnect()
 
+    // Delete associated reminders first
+    await deleteAssignmentReminders(id)
     await Assignment.deleteOne({ _id: id, user: session.user.id })
 
     return {
@@ -299,6 +327,9 @@ export async function createExamAction(data: any): Promise<CollegeResponse> {
       date: new Date(date),
       syllabus,
     })
+
+    // Create default reminders for the exam (1 day before, 2 hours before)
+    await createExamReminders(newExam._id.toString())
 
     return {
       success: true,
@@ -343,6 +374,11 @@ export async function updateExamAction(id: string, marksObtained?: number, maxMa
     if (marksObtained !== undefined) exam.marksObtained = Number(marksObtained)
     if (maxMarks !== undefined) exam.maxMarks = Number(maxMarks)
     await exam.save()
+
+    // If graded, we clean up any active reminders
+    if (marksObtained !== undefined || maxMarks !== undefined) {
+      await deleteExamReminders(id)
+    }
 
     return {
       success: true,

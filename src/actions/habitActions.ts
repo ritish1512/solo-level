@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Habit, { IHabit } from '@/models/Habit'
 import User from '@/models/User'
-import { getHabitDueDatesBetween, HabitRecurrence, isHabitDueForDate, normalizeHabitRecurrence } from '@/lib/habitRecurrence'
+import { getHabitDueDatesBetween, HabitRecurrence, formatLocalDate, isHabitDueForDate, normalizeHabitRecurrence, parseLocalDate } from '@/lib/habitRecurrence'
 
 export interface HabitResponse {
   success: boolean
@@ -36,10 +36,11 @@ export async function calculateStreak(
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const firstDate = new Date(uniqueDates[0])
-  firstDate.setHours(0, 0, 0, 0)
+  const firstDate = parseLocalDate(uniqueDates[0])
+  const lastCompletedDate = parseLocalDate(uniqueDates[uniqueDates.length - 1])
+  const streakEndDate = lastCompletedDate > today ? lastCompletedDate : today
 
-  const dueDates = getHabitDueDatesBetween(recurrence, firstDate, today)
+  const dueDates = getHabitDueDatesBetween(recurrence, firstDate, streakEndDate)
   const completedSet = new Set(uniqueDates)
 
   let longestStreak = 0
@@ -135,18 +136,21 @@ export async function getHabitsAction(): Promise<HabitResponse> {
     const habits = await Habit.find({ user: session.user.id }).sort({ createdAt: -1 })
 
     // Ensure recurrence fields are normalized for older documents that may lack the flat fields
-    const normalized = habits.map((h) => {
+    const normalized = await Promise.all(habits.map(async (h) => {
       const recurrence = normalizeHabitRecurrence({
         type: (h as any).recurrenceType ?? (h as any).recurrence?.type,
         days: (h as any).recurrenceDays ?? (h as any).recurrence?.days,
       })
 
       const obj = JSON.parse(JSON.stringify(h))
+      const streakValues = await calculateStreak(h.completedDates, recurrence)
       obj.recurrence = recurrence
       obj.recurrenceType = recurrence.type
       obj.recurrenceDays = recurrence.days
+      obj.streak = streakValues.currentStreak
+      obj.longestStreak = Math.max(obj.longestStreak ?? 0, streakValues.longestStreak)
       return obj
-    })
+    }))
 
     return {
       success: true,
@@ -168,7 +172,7 @@ export async function toggleHabitDateAction(habitId: string, dateStr: string): P
       return { success: false, error: 'Habit not found.' }
     }
 
-    const targetDate = new Date(`${dateStr}T00:00:00`)
+    const targetDate = parseLocalDate(dateStr)
     const recurrenceObj = normalizeHabitRecurrence({
       type: habit.recurrenceType ?? habit.recurrence?.type,
       days: habit.recurrenceDays ?? habit.recurrence?.days,
@@ -193,6 +197,11 @@ export async function toggleHabitDateAction(habitId: string, dateStr: string): P
     habit.longestStreak = Math.max(habit.longestStreak ?? 0, longestStreak)
 
     await habit.save()
+
+    const normalizedRecurrence = normalizeHabitRecurrence({
+      type: habit.recurrenceType ?? habit.recurrence?.type,
+      days: habit.recurrenceDays ?? habit.recurrence?.days,
+    })
 
     let xpAwarded = 0
     let rewardMessage = ''
@@ -228,10 +237,15 @@ export async function toggleHabitDateAction(habitId: string, dateStr: string): P
       }
     }
 
+    const habitObj: any = JSON.parse(JSON.stringify(habit))
+    habitObj.recurrence = normalizedRecurrence
+    habitObj.recurrenceType = normalizedRecurrence.type
+    habitObj.recurrenceDays = normalizedRecurrence.days
+
     return {
       success: true,
       message: isAdding ? `Habit completed!${rewardMessage}` : 'Habit completion unchecked.',
-      habit: JSON.parse(JSON.stringify(habit)),
+      habit: habitObj,
       xpAwarded,
     }
   } catch (error: any) {

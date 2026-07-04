@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useTransition } from 'react'
+import React, { useState, useTransition, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Plus, 
@@ -49,8 +49,47 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
   
+  const formatLocalDateTime = (date: Date) => {
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const hours = String(date.getHours()).padStart(2, '0')
+    const minutes = String(date.getMinutes()).padStart(2, '0')
+    return `${year}-${month}-${day}T${hours}:${minutes}`
+  }
+
   // Data State
   const [tasks, setTasks] = useState<any[]>(initialTasks)
+
+  // Caching tasks state in IndexedDB for offline reliability
+  useEffect(() => {
+    async function loadCache() {
+      try {
+        const { getFromStore, saveToStore } = await import('@/lib/offlineDb')
+        const cachedTasks = await getFromStore('cache_store', 'tasks')
+        if (cachedTasks && Array.isArray(cachedTasks)) {
+          setTasks(cachedTasks)
+        } else {
+          await saveToStore('cache_store', 'tasks', initialTasks)
+        }
+      } catch (err) {
+        console.error('Failed to load tasks cache:', err)
+      }
+    }
+    void loadCache()
+  }, [initialTasks])
+
+  useEffect(() => {
+    async function saveCache() {
+      try {
+        const { saveToStore } = await import('@/lib/offlineDb')
+        await saveToStore('cache_store', 'tasks', tasks)
+      } catch (err) {
+        console.error('Failed to save tasks cache:', err)
+      }
+    }
+    void saveCache()
+  }, [tasks])
   
   // Modal & Form States
   const [showAddModal, setShowAddModal] = useState(false)
@@ -63,7 +102,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
     priority: 'Medium',
     difficulty: 'Medium',
     energyRequired: 'Medium',
-    deadline: new Date().toISOString().split('T')[0],
+    deadline: formatLocalDateTime(new Date()),
     estimatedTime: '',
     tags: '',
     notes: '',
@@ -88,15 +127,30 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
         ? formData.tags.split(',').map((t) => t.trim()).filter((t) => t !== '')
         : []
 
-      const res = await createTaskAction({
-        ...formData,
-        tags: parsedTags,
-        reminderConfigs: reminderConfigs.filter((r) => r.enabled),
-      })
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'createTaskAction',
+        createTaskAction,
+        [{
+          ...formData,
+          tags: parsedTags,
+          reminderConfigs: reminderConfigs.filter((r) => r.enabled),
+        }],
+        (args, tempId) => ({
+          task: {
+            _id: tempId,
+            ...args[0],
+            status: 'Todo',
+            createdAt: new Date().toISOString(),
+          }
+        })
+      )
 
       if (res.success) {
         toast(res.message || 'Task created successfully!', 'success')
-        setTasks((prev) => [...prev, res.task])
+        if (res.task) {
+          setTasks((prev) => [...prev, res.task])
+        }
         setShowAddModal(false)
         resetForm()
       } else {
@@ -114,15 +168,28 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
         ? formData.tags.split(',').map((t) => t.trim()).filter((t) => t !== '')
         : []
 
-      const res = await updateTaskAction(selectedTask._id, {
-        ...formData,
-        tags: parsedTags,
-        reminderConfigs: reminderConfigs.filter((r) => r.enabled),
-      })
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'updateTaskAction',
+        updateTaskAction,
+        [selectedTask._id, {
+          ...formData,
+          tags: parsedTags,
+          reminderConfigs: reminderConfigs.filter((r) => r.enabled),
+        }],
+        (args) => ({
+          task: {
+            ...selectedTask,
+            ...args[1],
+          }
+        })
+      )
 
       if (res.success) {
         toast(res.message || 'Task updated!', 'success')
-        setTasks((prev) => prev.map((t) => (t._id === selectedTask._id ? res.task : t)))
+        if (res.task) {
+          setTasks((prev) => prev.map((t) => (t._id === selectedTask._id ? res.task : t)))
+        }
         setSelectedTask(null)
         resetForm()
       } else {
@@ -135,7 +202,13 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
     if (!confirm('Are you sure you want to delete this task?')) return
 
     startTransition(async () => {
-      const res = await deleteTaskAction(taskId)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'deleteTaskAction',
+        deleteTaskAction,
+        [taskId],
+        () => ({ success: true })
+      )
       if (res.success) {
         toast(res.message || 'Task deleted', 'info')
         setTasks((prev) => prev.filter((t) => t._id !== taskId))
@@ -148,10 +221,26 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
 
   const handleMoveStatus = (taskId: string, newStatus: 'Todo' | 'In Progress' | 'Testing' | 'Completed') => {
     startTransition(async () => {
-      const res = await updateTaskStatusAction(taskId, newStatus)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'updateTaskStatusAction',
+        updateTaskStatusAction,
+        [taskId, newStatus],
+        (args) => {
+          const task = tasks.find(t => t._id === args[0])
+          return {
+            task: {
+              ...task,
+              status: args[1],
+            }
+          }
+        }
+      )
       if (res.success) {
         toast(res.message || 'Status updated', 'success')
-        setTasks((prev) => prev.map((t) => (t._id === taskId ? res.task : t)))
+        if (res.task) {
+          setTasks((prev) => prev.map((t) => (t._id === taskId ? res.task : t)))
+        }
       } else {
         toast(res.error || 'Failed to update status', 'error')
       }
@@ -160,6 +249,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
 
   const openEditModal = (task: any) => {
     setSelectedTask(task)
+    const deadlineDate = new Date(task.deadline)
     setFormData({
       title: task.title,
       description: task.description || '',
@@ -167,7 +257,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       priority: task.priority,
       difficulty: task.difficulty,
       energyRequired: task.energyRequired,
-      deadline: new Date(task.deadline).toISOString().split('T')[0],
+      deadline: Number.isNaN(deadlineDate.getTime()) ? formatLocalDateTime(new Date()) : formatLocalDateTime(deadlineDate),
       estimatedTime: task.estimatedTime?.toString() || '',
       tags: task.tags?.join(', ') || '',
       notes: task.notes || '',
@@ -185,7 +275,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       priority: 'Medium',
       difficulty: 'Medium',
       energyRequired: 'Medium',
-      deadline: new Date().toISOString().split('T')[0],
+      deadline: formatLocalDateTime(new Date()),
       estimatedTime: '',
       tags: '',
       notes: '',

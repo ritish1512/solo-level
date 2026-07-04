@@ -3,12 +3,12 @@
 import React, { useState, useTransition } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Flame, Award, Check } from 'lucide-react'
-import { HABIT_RECURRENCE_DAYS, HABIT_RECURRENCE_LABELS, isHabitDueForDate, getHabitRecurrenceLabel, type HabitRecurrenceType } from '@/lib/habitRecurrence'
+import { HABIT_RECURRENCE_DAYS, HABIT_RECURRENCE_LABELS, isHabitDueForDate, getHabitRecurrenceLabel, formatLocalDate, type HabitRecurrenceType } from '@/lib/habitRecurrence'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
-import { createHabitAction, toggleHabitDateAction, deleteHabitAction } from '@/actions/habitActions'
+import { createHabitAction, getHabitsAction, toggleHabitDateAction, deleteHabitAction } from '@/actions/habitActions'
 
 interface HabitsClientProps {
   initialHabits: any[]
@@ -24,7 +24,7 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
   const [recurrenceType, setRecurrenceType] = useState<HabitRecurrenceType>('daily')
   const [selectedDays, setSelectedDays] = useState<string[]>([])
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = formatLocalDate(new Date())
 
   // Add new habit
   const handleCreateHabit = (e: React.FormEvent) => {
@@ -62,9 +62,12 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
       const res = await toggleHabitDateAction(habitId, todayStr)
       if (res.success) {
         toast(res.message || 'Habit state toggled!', 'success')
-        setHabits((prev) =>
-          prev.map((h) => (h._id === habitId ? res.habit : h))
-        )
+        const habitsRes = await getHabitsAction()
+        if (habitsRes.success && habitsRes.habits) {
+          setHabits(habitsRes.habits)
+        } else {
+          setHabits((prev) => prev.map((h) => (h._id === habitId ? res.habit : h)))
+        }
       } else {
         toast(res.error || 'Failed to toggle habit', 'error')
       }

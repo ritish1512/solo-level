@@ -14,9 +14,8 @@ export async function GET() {
 
     await dbConnect()
 
-    const user = await User.findById(session.user.id).select(
-      'name email image xp level streak longestStreak role emailVerified'
-    )
+    const { checkAndUpdateUserStreak } = await import('@/lib/userStreak')
+    const user = await checkAndUpdateUserStreak(session.user.id)
 
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })

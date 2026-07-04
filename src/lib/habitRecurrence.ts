@@ -33,6 +33,18 @@ export function normalizeHabitRecurrence(recurrence?: any | null): HabitRecurren
   }
 }
 
+export function formatLocalDate(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+export function parseLocalDate(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
 export function getHabitRecurrenceLabel(recurrence?: HabitRecurrence | null): string {
   const normalized = normalizeHabitRecurrence(recurrence)
 
@@ -80,7 +92,7 @@ export function getHabitDueDatesBetween(
 
   while (current <= end) {
     if (isHabitDueForDate(normalized, current)) {
-      const dateString = current.toISOString().split('T')[0]
+      const dateString = formatLocalDate(current)
       dates.push(dateString)
     }
     current.setDate(current.getDate() + 1)

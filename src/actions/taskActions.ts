@@ -278,8 +278,12 @@ export async function updateTaskStatusAction(id: string, status: 'Todo' | 'In Pr
     
     if (status === 'Completed') {
       task.progress = 100
+      await deleteTaskReminders(id)
     } else if (originalStatus === 'Completed') {
       task.progress = 50 // Re-evaluate progress
+      if (task.reminderConfigs && task.reminderConfigs.length > 0) {
+        await createTaskReminders(id, task.reminderConfigs)
+      }
     }
 
     await task.save()

@@ -25,8 +25,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { useToast } from '@/components/ui/Toast'
-import { toggleHabitDateAction } from '@/actions/habitActions'
-import { getHabitRecurrenceLabel, isHabitDueForDate } from '@/lib/habitRecurrence'
+import { getHabitsAction, toggleHabitDateAction } from '@/actions/habitActions'
+import { getHabitRecurrenceLabel, isHabitDueForDate, formatLocalDate } from '@/lib/habitRecurrence'
 import { updateTaskStatusAction } from '@/actions/taskActions'
 import { 
   createTimeBlockAction, 
@@ -50,8 +50,6 @@ const QUOTES = [
   "The only way to get stronger is to keep fighting."
 ]
 
-const INITIAL_QUOTE = QUOTES[Math.floor(Math.random() * QUOTES.length)]
-
 export default function DashboardClient({
   initialUserProfile,
   initialTasks,
@@ -64,7 +62,7 @@ export default function DashboardClient({
   // Real-time states
   const [currentTime, setCurrentTime] = useState('')
   const [currentDate, setCurrentDate] = useState('')
-  const [quote] = useState(INITIAL_QUOTE)
+  const [quote, setQuote] = useState('')
 
   // Data states
   const [userProfile, setUserProfile] = useState(initialUserProfile)
@@ -72,14 +70,87 @@ export default function DashboardClient({
   const [habits, setHabits] = useState(initialHabits)
   const [timeBlocks, setTimeBlocks] = useState(initialTimeBlocks)
 
+  // Caching dashboard states in IndexedDB for offline reliability
+  useEffect(() => {
+    async function loadCache() {
+      try {
+        const { getFromStore, saveToStore } = await import('@/lib/offlineDb')
+        const cachedTasks = await getFromStore('cache_store', 'tasks')
+        if (cachedTasks && Array.isArray(cachedTasks)) setTasks(cachedTasks)
+        else await saveToStore('cache_store', 'tasks', initialTasks)
+
+        const cachedHabits = await getFromStore('cache_store', 'habits')
+        if (cachedHabits && Array.isArray(cachedHabits)) setHabits(cachedHabits)
+        else await saveToStore('cache_store', 'habits', initialHabits)
+
+        const cachedTimeBlocks = await getFromStore('cache_store', 'timeBlocks')
+        if (cachedTimeBlocks && Array.isArray(cachedTimeBlocks)) setTimeBlocks(cachedTimeBlocks)
+        else await saveToStore('cache_store', 'timeBlocks', initialTimeBlocks)
+
+        const cachedProfile = await getFromStore('cache_store', 'profile')
+        if (cachedProfile) setUserProfile(cachedProfile)
+        else await saveToStore('cache_store', 'profile', initialUserProfile)
+      } catch (err) {
+        console.error('Failed to load dashboard caches:', err)
+      }
+    }
+    void loadCache()
+  }, [initialTasks, initialHabits, initialTimeBlocks, initialUserProfile])
+
+  useEffect(() => {
+    async function saveTasks() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'tasks', tasks)
+    }
+    void saveTasks()
+  }, [tasks])
+
+  useEffect(() => {
+    async function saveHabits() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'habits', habits)
+    }
+    void saveHabits()
+  }, [habits])
+
+  useEffect(() => {
+    async function saveTimeBlocks() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'timeBlocks', timeBlocks)
+    }
+    void saveTimeBlocks()
+  }, [timeBlocks])
+
+  useEffect(() => {
+    async function saveProfile() {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('cache_store', 'profile', userProfile)
+    }
+    void saveProfile()
+  }, [userProfile])
+
+  const POMODORO_STORAGE_KEY = 'solo-leveling-pomodoro'
+
   // Pomodoro Timer states
   const [pomodoroMode, setPomodoroMode] = useState(25) // 25 mins
   const [timeLeft, setTimeLeft] = useState(25 * 60)
+  const [timerDuration, setTimerDuration] = useState(25 * 60)
+  const [timerStartTimestamp, setTimerStartTimestamp] = useState<number | null>(null)
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerProgress, setTimerProgress] = useState(100)
   const [customMinutes, setCustomMinutes] = useState('25')
   const [timerInfo, setTimerInfo] = useState('')
+  const [startAudioUrl, setStartAudioUrl] = useState<string | null>(null)
+  const [completionAudioUrl, setCompletionAudioUrl] = useState<string | null>(null)
+  const [sessionFinished, setSessionFinished] = useState(false)
+  const startAudioRef = useRef<HTMLAudioElement | null>(null)
+  const completionAudioRef = useRef<HTMLAudioElement | null>(null)
   const wakeLockSentinelRef = useRef<WakeLockSentinel | null>(null)
+  const completionHandledRef = useRef(false)
+  const completionPhaseRef = useRef(false)
+  const activeAudioPhaseRef = useRef<'idle' | 'start' | 'completion'>('idle')
+  const activeStartAudioUrlRef = useRef<string | null>(null)
+  const activeCompletionAudioUrlRef = useRef<string | null>(null)
 
   // New Time Block form
   const [showAddBlock, setShowAddBlock] = useState(false)
@@ -89,13 +160,17 @@ export default function DashboardClient({
     endTime: '09:00',
   })
 
-  // Date String YYYY-MM-DD
-  const todayStr = new Date().toISOString().split('T')[0]
+  // Date String YYYY-MM-DD (local date)
+  const todayStr = formatLocalDate(new Date())
 
   // Synthesize beep audio using Web Audio API (no assets needed)
   const playBeep = () => {
     try {
-      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext
+      const audioCtx = new AudioContextClass()
+      if (audioCtx.state === 'suspended') {
+        void audioCtx.resume()
+      }
       const oscillator = audioCtx.createOscillator()
       const gainNode = audioCtx.createGain()
 
@@ -113,16 +188,181 @@ export default function DashboardClient({
     }
   }
 
-  // 1. Clock effect
-  useEffect(() => {
-    const updateClock = () => {
-      const d = new Date()
-      setCurrentTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
-      setCurrentDate(d.toLocaleDateString([], { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }))
+  const loadLocalAudio = async (file: File) => {
+    return URL.createObjectURL(file)
+  }
+
+  const pauseAudio = (audio: HTMLAudioElement | null) => {
+    if (!audio) return
+    try {
+      audio.muted = true
+      audio.pause()
+      if (audio.readyState > 0) {
+        audio.currentTime = 0
+      }
+    } catch (e) {
+      console.log('Error pausing audio:', e)
     }
-    updateClock()
-    const timer = setInterval(updateClock, 1000)
-    return () => clearInterval(timer)
+  }
+
+  const tryPlayAudio = async (audio: HTMLAudioElement | null) => {
+    if (!audio) return
+    try {
+      audio.pause()
+      audio.currentTime = 0
+      audio.muted = false
+      await audio.play()
+    } catch (e) {
+      console.log('Audio playback blocked:', e)
+    }
+  }
+
+  const stopAllTimerAudio = () => {
+    pauseAudio(startAudioRef.current)
+    pauseAudio(completionAudioRef.current)
+    activeAudioPhaseRef.current = 'idle'
+  }
+
+  // Synchronize startAudioRef and completionAudioRef whenever URLs change
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (startAudioRef.current) {
+        pauseAudio(startAudioRef.current)
+      }
+      if (startAudioUrl) {
+        const audio = new Audio(startAudioUrl)
+        audio.loop = false
+        audio.preload = 'auto'
+        audio.volume = 0.35
+        startAudioRef.current = audio
+      } else {
+        startAudioRef.current = null
+      }
+    }
+  }, [startAudioUrl])
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (completionAudioRef.current) {
+        pauseAudio(completionAudioRef.current)
+      }
+      if (completionAudioUrl) {
+        const audio = new Audio(completionAudioUrl)
+        audio.loop = false
+        audio.preload = 'auto'
+        audio.volume = 0.35
+        completionAudioRef.current = audio
+      } else {
+        completionAudioRef.current = null
+      }
+    }
+  }, [completionAudioUrl])
+
+  useEffect(() => {
+    activeStartAudioUrlRef.current = startAudioUrl
+    activeCompletionAudioUrlRef.current = completionAudioUrl
+  }, [startAudioUrl, completionAudioUrl])
+
+  useEffect(() => {
+    return () => {
+      if (activeStartAudioUrlRef.current) {
+        URL.revokeObjectURL(activeStartAudioUrlRef.current)
+      }
+      if (activeCompletionAudioUrlRef.current) {
+        URL.revokeObjectURL(activeCompletionAudioUrlRef.current)
+      }
+      stopAllTimerAudio()
+      startAudioRef.current = null
+      completionAudioRef.current = null
+    }
+  }, [])
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(POMODORO_STORAGE_KEY)
+    if (!stored) return
+
+    try {
+      const parsed = JSON.parse(stored)
+      const restoredMode = Number(parsed.pomodoroMode) || 25
+      const restoredDuration = Number(parsed.timerDuration) || restoredMode * 60
+      let restoredTimeLeft = Number(parsed.timeLeft)
+      let restoredRunning = Boolean(parsed.timerRunning)
+      let restoredSessionFinished = Boolean(parsed.sessionFinished)
+      const restoredStart = typeof parsed.timerStartTimestamp === 'number' ? parsed.timerStartTimestamp : null
+      const restoredCustomMinutes = parsed.customMinutes || String(restoredMode)
+
+      if (restoredRunning && restoredStart) {
+        const elapsed = Math.floor((Date.now() - restoredStart) / 1000)
+        restoredTimeLeft = Math.max(restoredDuration - elapsed, 0)
+        if (restoredTimeLeft <= 0) {
+          restoredRunning = false
+          restoredSessionFinished = true
+        }
+      }
+
+      setPomodoroMode(restoredMode)
+      setTimerDuration(restoredDuration)
+      setCustomMinutes(restoredCustomMinutes)
+      setTimeLeft(restoredTimeLeft || restoredDuration)
+      setTimerProgress(restoredDuration > 0 ? (restoredTimeLeft / restoredDuration) * 100 : 100)
+      setTimerRunning(restoredRunning)
+      setTimerStartTimestamp(restoredRunning && restoredStart ? restoredStart : null)
+      setSessionFinished(restoredSessionFinished)
+      if (restoredSessionFinished || restoredTimeLeft === 0) {
+        completionHandledRef.current = true
+      }
+    } catch (error) {
+      console.log('Failed to restore pomodoro state:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    const saveState = () => {
+      window.localStorage.setItem(
+        POMODORO_STORAGE_KEY,
+        JSON.stringify({
+          pomodoroMode,
+          timerDuration,
+          timeLeft,
+          timerStartTimestamp,
+          timerRunning,
+          sessionFinished,
+          customMinutes,
+        })
+      )
+    }
+
+    saveState()
+    const handleUnload = () => saveState()
+    const handlePageHide = () => saveState()
+
+    window.addEventListener('beforeunload', handleUnload)
+    window.addEventListener('pagehide', handlePageHide)
+    return () => {
+      window.removeEventListener('beforeunload', handleUnload)
+      window.removeEventListener('pagehide', handlePageHide)
+    }
+  }, [pomodoroMode, timerDuration, timeLeft, timerStartTimestamp, timerRunning, sessionFinished, customMinutes])
+
+  useEffect(() => {
+    async function loadSavedSounds() {
+      try {
+        const { getFromStore } = await import('@/lib/offlineDb')
+        const startFile = await getFromStore('audio_store', 'start_sound')
+        if (startFile instanceof Blob) {
+          const url = URL.createObjectURL(startFile)
+          setStartAudioUrl(url)
+        }
+        const completionFile = await getFromStore('audio_store', 'completion_sound')
+        if (completionFile instanceof Blob) {
+          const url = URL.createObjectURL(completionFile)
+          setCompletionAudioUrl(url)
+        }
+      } catch (err) {
+        console.error('Failed to load saved timer sounds:', err)
+      }
+    }
+    void loadSavedSounds()
   }, [])
 
   const releaseWakeLock = async () => {
@@ -173,45 +413,63 @@ export default function DashboardClient({
 
   // 2. Pomodoro Timer Countdown Effect
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
+    if (!timerRunning || timerStartTimestamp === null || sessionFinished) return
 
-    if (timerRunning && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft((prev) => {
-          const next = prev - 1
+    const updateTimer = () => {
+      const elapsed = Math.floor((Date.now() - timerStartTimestamp) / 1000)
+      const next = Math.max(timerDuration - elapsed, 0)
+      setTimeLeft(next)
+      setTimerProgress(timerDuration > 0 ? (next / timerDuration) * 100 : 0)
 
-          if (next <= 0) {
-            setTimerRunning(false)
-            setTimerInfo('')
-            setTimerProgress(100)
-            setTimeLeft(pomodoroMode * 60)
-            playBeep()
-            toast('Focus session completed! Take a break.', 'success')
+      if (next === 0 && !completionHandledRef.current) {
+        completionHandledRef.current = true
+        completionPhaseRef.current = false
+        setTimerRunning(false)
+        setTimerInfo('')
+        setSessionFinished(true)
+        stopAllTimerAudio()
+        playBeep() // Play the beep sound at exact completion
+        toast('Focus session completed! Take a break.', 'success')
 
-            startTransition(async () => {
-              try {
-                const userRes = await fetch('/api/user/profile')
-                if (userRes.ok) {
-                  const data = await userRes.json()
-                  setUserProfile(data)
-                }
-              } catch (err) {}
-            })
-
-            return 0
-          }
-
-          const totalSeconds = pomodoroMode * 60
-          setTimerProgress((next / totalSeconds) * 100)
-          return next
+        startTransition(async () => {
+          try {
+            const userRes = await fetch('/api/user/profile')
+            if (userRes.ok) {
+              const data = await userRes.json()
+              setUserProfile(data)
+            }
+          } catch (err) {}
         })
-      }, 1000)
+      }
     }
 
-    return () => {
-      if (interval) clearInterval(interval)
+    updateTimer()
+    const interval = window.setInterval(updateTimer, 1000)
+    return () => window.clearInterval(interval)
+  }, [timerRunning, timerStartTimestamp, timerDuration, sessionFinished, toast])
+
+  // 2b. Audio playback synchronization effect (declarative source of truth)
+  useEffect(() => {
+    if (!timerRunning || sessionFinished || timeLeft <= 0) {
+      stopAllTimerAudio()
+      return
     }
-  }, [timerRunning, timeLeft, pomodoroMode, toast])
+
+    if (timeLeft > 6) {
+      if (activeAudioPhaseRef.current !== 'start') {
+        activeAudioPhaseRef.current = 'start'
+        pauseAudio(completionAudioRef.current)
+        void tryPlayAudio(startAudioRef.current)
+      }
+    } else {
+      if (activeAudioPhaseRef.current !== 'completion') {
+        activeAudioPhaseRef.current = 'completion'
+        pauseAudio(startAudioRef.current)
+        void tryPlayAudio(completionAudioRef.current)
+      }
+    }
+  }, [timerRunning, timeLeft, sessionFinished, startAudioUrl, completionAudioUrl])
+
 
   const formatTimer = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
@@ -220,11 +478,16 @@ export default function DashboardClient({
   }
 
   const changeTimerMode = (mins: number) => {
+    completionHandledRef.current = false
+    setSessionFinished(false)
     setTimerRunning(false)
+    setTimerStartTimestamp(null)
     setPomodoroMode(mins)
     setTimeLeft(mins * 60)
     setTimerProgress(100)
     setTimerInfo('')
+
+    stopAllTimerAudio()
   }
 
   const handleApplyCustomTimer = () => {
@@ -240,15 +503,75 @@ export default function DashboardClient({
     changeTimerMode(safeMinutes)
   }
 
+  const handleStartAudioChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const url = await loadLocalAudio(file)
+    setStartAudioUrl(url)
+
+    try {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('audio_store', 'start_sound', file)
+      toast('Start focus sound saved successfully!', 'success')
+    } catch (err) {
+      console.error('Failed to save start sound in offline database:', err)
+    }
+  }
+
+  const handleCompletionAudioChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    const url = await loadLocalAudio(file)
+    setCompletionAudioUrl(url)
+
+    try {
+      const { saveToStore } = await import('@/lib/offlineDb')
+      await saveToStore('audio_store', 'completion_sound', file)
+      toast('Completion focus sound saved successfully!', 'success')
+    } catch (err) {
+      console.error('Failed to save completion sound in offline database:', err)
+    }
+  }
+
   const handleToggleTimer = () => {
     if (timerRunning) {
       setTimerRunning(false)
       setTimerInfo('')
+      stopAllTimerAudio()
       return
     }
 
+    let currentLeft = timeLeft
+    if (timeLeft <= 0) {
+      const totalSeconds = pomodoroMode * 60
+      currentLeft = totalSeconds
+      setTimeLeft(totalSeconds)
+      setTimerDuration(totalSeconds)
+      setTimerStartTimestamp(null)
+      setSessionFinished(false)
+      completionHandledRef.current = false
+      stopAllTimerAudio()
+    }
+
+    const totalSeconds = pomodoroMode * 60
+    const startOffset = totalSeconds - currentLeft
+    setTimerDuration(totalSeconds)
+    setTimerStartTimestamp(Date.now() - Math.max(startOffset, 0) * 1000)
     setTimerRunning(true)
     setTimerInfo('Screen wake lock is on while this focus session runs.')
+
+    if (currentLeft > 6) {
+      activeAudioPhaseRef.current = 'start'
+      pauseAudio(completionAudioRef.current)
+      void tryPlayAudio(startAudioRef.current)
+    } else if (currentLeft > 0) {
+      activeAudioPhaseRef.current = 'completion'
+      pauseAudio(startAudioRef.current)
+      void tryPlayAudio(completionAudioRef.current)
+    }
+
     toast('Focus session started. Your screen will stay awake until it ends.', 'info')
   }
 
@@ -260,17 +583,53 @@ export default function DashboardClient({
     }
 
     startTransition(async () => {
-      const res = await toggleHabitDateAction(habitId, todayStr)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'toggleHabitDateAction',
+        toggleHabitDateAction,
+        [habitId, todayStr],
+        (args) => {
+          const habit = habits.find(h => h._id === args[0])
+          if (!habit) return {}
+          const isCompleted = habit.completedDates.includes(todayStr)
+          const newDates = isCompleted 
+            ? habit.completedDates.filter((d: string) => d !== todayStr)
+            : [...habit.completedDates, todayStr]
+          return {
+            habit: {
+              ...habit,
+              completedDates: newDates,
+              streak: isCompleted ? Math.max(0, habit.streak - 1) : habit.streak + 1,
+            }
+          }
+        }
+      )
       if (res.success) {
         toast(res.message || 'Habit updated', 'success')
-        // Refresh habits and profile stats
-        setHabits((prev) =>
-          prev.map((h) => (h._id === habitId ? res.habit : h))
-        )
-        const profileRes = await fetch('/api/user/profile')
-        if (profileRes.ok) {
-          const data = await profileRes.json()
-          setUserProfile(data)
+        if (res.habit) {
+          setHabits((prev) => prev.map((h) => (h._id === habitId ? res.habit : h)))
+        }
+
+        // Refresh User profile for XP/Level gains
+        const isOnline = typeof navigator !== 'undefined' && navigator.onLine
+        if (isOnline) {
+          const profileRes = await fetch('/api/user/profile')
+          if (profileRes.ok) {
+            const data = await profileRes.json()
+            setUserProfile(data)
+          }
+        } else {
+          // Optimistically update XP/Level offline
+          const originalHabit = habits.find(h => h._id === habitId)
+          const isAddingCompletion = originalHabit ? !originalHabit.completedDates.includes(todayStr) : false
+          if (isAddingCompletion) {
+            setUserProfile((prev: any) => {
+              if (!prev) return prev
+              const newXp = prev.xp + 5
+              const newLevel = Math.floor(newXp / 100) + 1
+              return { ...prev, xp: newXp, level: newLevel }
+            })
+          }
         }
       } else {
         toast(res.error || 'Failed to update habit', 'error')
@@ -281,16 +640,32 @@ export default function DashboardClient({
   // 4. Toggle Task Status
   const handleToggleTask = (taskId: string) => {
     startTransition(async () => {
-      const res = await updateTaskStatusAction(taskId, 'Completed')
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'updateTaskStatusAction',
+        updateTaskStatusAction,
+        [taskId, 'Completed'],
+        () => ({ success: true })
+      )
       if (res.success) {
         toast(res.message || 'Task completed!', 'success')
         setTasks((prev) => prev.filter((t) => t._id !== taskId))
         
-        // Refresh User profile for XP/Level gains
-        const profileRes = await fetch('/api/user/profile')
-        if (profileRes.ok) {
-          const data = await profileRes.json()
-          setUserProfile(data)
+        const isOnline = typeof navigator !== 'undefined' && navigator.onLine
+        if (isOnline) {
+          const profileRes = await fetch('/api/user/profile')
+          if (profileRes.ok) {
+            const data = await profileRes.json()
+            setUserProfile(data)
+          }
+        } else {
+          // Optimistically update XP/Level offline
+          setUserProfile((prev: any) => {
+            if (!prev) return prev
+            const newXp = prev.xp + 20
+            const newLevel = Math.floor(newXp / 100) + 1
+            return { ...prev, xp: newXp, level: newLevel }
+          })
         }
       } else {
         toast(res.error || 'Failed to complete task', 'error')
@@ -302,13 +677,27 @@ export default function DashboardClient({
   const handleAddBlock = (e: React.FormEvent) => {
     e.preventDefault()
     startTransition(async () => {
-      const res = await createTimeBlockAction({
-        ...newBlock,
-        date: todayStr,
-      })
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'createTimeBlockAction',
+        createTimeBlockAction,
+        [{
+          ...newBlock,
+          date: todayStr,
+        }],
+        (args, tempId) => ({
+          timeBlock: {
+            _id: tempId,
+            ...args[0],
+            isCompleted: false,
+          }
+        })
+      )
       if (res.success) {
         toast('Planner slot added!', 'success')
-        setTimeBlocks((prev) => [...prev, res.timeBlock].sort((a, b) => a.position - b.position))
+        if (res.timeBlock) {
+          setTimeBlocks((prev) => [...prev, res.timeBlock].sort((a, b) => a.position - b.position))
+        }
         setShowAddBlock(false)
         setNewBlock({ title: '', startTime: '08:00', endTime: '09:00' })
       } else {
@@ -319,11 +708,27 @@ export default function DashboardClient({
 
   const handleToggleBlock = (blockId: string, isCompleted: boolean) => {
     startTransition(async () => {
-      const res = await updateTimeBlockAction(blockId, { isCompleted: !isCompleted })
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'updateTimeBlockAction',
+        updateTimeBlockAction,
+        [blockId, { isCompleted: !isCompleted }],
+        (args) => {
+          const block = timeBlocks.find(b => b._id === args[0])
+          return {
+            timeBlock: {
+              ...block,
+              isCompleted: args[1].isCompleted,
+            }
+          }
+        }
+      )
       if (res.success) {
-        setTimeBlocks((prev) =>
-          prev.map((b) => (b._id === blockId ? res.timeBlock : b))
-        )
+        if (res.timeBlock) {
+          setTimeBlocks((prev) =>
+            prev.map((b) => (b._id === blockId ? res.timeBlock : b))
+          )
+        }
       } else {
         toast(res.error || 'Failed to update planner slot', 'error')
       }
@@ -332,7 +737,13 @@ export default function DashboardClient({
 
   const handleDeleteBlock = (blockId: string) => {
     startTransition(async () => {
-      const res = await deleteTimeBlockAction(blockId)
+      const { executeAction } = await import('@/lib/offlineSync')
+      const res = await executeAction(
+        'deleteTimeBlockAction',
+        deleteTimeBlockAction,
+        [blockId],
+        () => ({ success: true })
+      )
       if (res.success) {
         setTimeBlocks((prev) => prev.filter((b) => b._id !== blockId))
         toast('Planner slot removed.', 'info')
@@ -515,11 +926,55 @@ export default function DashboardClient({
                 </div>
               </div>
 
+              <div className="space-y-2 rounded-xl border border-zinc-200/70 bg-zinc-50/80 p-3 text-xs text-zinc-700 dark:border-zinc-700/30 dark:bg-zinc-950/10 dark:text-zinc-300">
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="startAudio" className="block font-semibold">Start sound</label>
+                    <Input
+                      id="startAudio"
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleStartAudioChange}
+                      className="h-9"
+                    />
+                    {startAudioUrl ? (
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Loaded start sound. It will play when the timer begins.</p>
+                    ) : (
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Optional local audio for timer start.</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label htmlFor="completionAudio" className="block font-semibold">Completion sound</label>
+                    <Input
+                      id="completionAudio"
+                      type="file"
+                      accept="audio/*"
+                      onChange={handleCompletionAudioChange}
+                      className="h-9"
+                    />
+                    {completionAudioUrl ? (
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Loaded completion sound. It will play when the timer ends.</p>
+                    ) : (
+                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Optional local audio for timer completion.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {timerInfo ? (
                 <p className="text-xs text-emerald-600 dark:text-emerald-400">{timerInfo}</p>
               ) : (
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">Tip: start a session and your screen will stay awake until it finishes.</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Use it to improve focus and productivity.</p>
               )}
+
+              <div className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-950/70 px-2 py-1">Start sound: {startAudioUrl ? 'Custom active' : 'Default'}</span>
+                  <span className="rounded-full border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-950/70 px-2 py-1">Completion sound: {completionAudioUrl ? 'Custom active' : 'Default'}</span>
+                </div>
+                <p className="text-[11px] italic">Hover the buttons for details.</p>
+              </div>
 
               {/* Buttons controls */}
               <div className="flex gap-2">
@@ -817,7 +1272,7 @@ export default function DashboardClient({
                     
                     {/* Date */}
                     <span className="text-[10px] font-medium text-zinc-400">
-                      {new Date(task.deadline).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                      {new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
                   </div>
                 </div>
