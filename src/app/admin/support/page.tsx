@@ -84,11 +84,13 @@ export default function AdminSupportPage() {
   }
 
   useEffect(() => {
-    loadTickets()
+    const id = setTimeout(() => loadTickets(), 0)
+    return () => clearTimeout(id)
   }, [type, status, priority])
 
   useEffect(() => {
-    loadAdmins()
+    const id = setTimeout(() => loadAdmins(), 0)
+    return () => clearTimeout(id)
   }, [])
 
   // Handle status update
@@ -375,7 +377,7 @@ export default function AdminSupportPage() {
                     <label className="block text-[10px] font-bold text-zinc-500">Ticket Status</label>
                     <select
                       value={selectedTicket.status}
-                      onChange={(e) => handleStatusChange(e.target.value as any)}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handleStatusChange(e.target.value as 'Open' | 'In Progress' | 'Resolved')}
                       className="w-full rounded-lg border border-border bg-zinc-50/50 p-2 text-xs font-bold text-zinc-600 outline-none dark:bg-zinc-950/20 dark:text-zinc-400"
                     >
                       <option value="Open">Open</option>
@@ -389,7 +391,7 @@ export default function AdminSupportPage() {
                     <label className="block text-[10px] font-bold text-zinc-500">Priority Level</label>
                     <select
                       value={selectedTicket.priority}
-                      onChange={(e) => handlePriorityChange(e.target.value as any)}
+                      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => handlePriorityChange(e.target.value as 'Low' | 'Medium' | 'High' | 'Critical')}
                       className="w-full rounded-lg border border-border bg-zinc-50/50 p-2 text-xs font-bold text-zinc-600 outline-none dark:bg-zinc-950/20 dark:text-zinc-400"
                     >
                       <option value="Low">Low</option>

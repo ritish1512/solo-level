@@ -34,7 +34,8 @@ export default function AdminAnalyticsPage() {
         setLoading(false)
       }
     }
-    loadAnalytics()
+      const id = setTimeout(() => loadAnalytics(), 0)
+      return () => clearTimeout(id)
   }, [])
 
   // Export platform activity CSV client-side

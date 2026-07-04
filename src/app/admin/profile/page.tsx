@@ -62,7 +62,8 @@ export default function AdminProfilePage() {
   }
 
   useEffect(() => {
-    loadProfile()
+    const id = setTimeout(() => loadProfile(), 0)
+    return () => clearTimeout(id)
   }, [])
 
   // Save profile details

@@ -4,6 +4,7 @@ import dbConnect from '@/lib/mongodb'
 import User from '@/models/User'
 import Task from '@/models/Task'
 import Habit from '@/models/Habit'
+import { normalizeHabitRecurrence } from '@/lib/habitRecurrence'
 import TimeBlock from '@/models/TimeBlock'
 import DashboardClient from './DashboardClient'
 
@@ -22,7 +23,7 @@ export default async function DashboardPage() {
   const todayStr = new Date().toISOString().split('T')[0]
 
   // Fetch initial profile stats
-  const user = await User.findById(userId).select('name email image xp level streak longestStreak')
+  const user = await User.findById(userId).select('name email image xp level streak longestStreak emailVerified')
   const serializedUser = user ? JSON.parse(JSON.stringify(user)) : null
 
   // Fetch incomplete tasks sorted by deadline
@@ -34,7 +35,12 @@ export default async function DashboardPage() {
 
   // Fetch habits
   const habits = await Habit.find({ user: userId }).sort({ createdAt: -1 })
-  const serializedHabits = JSON.parse(JSON.stringify(habits))
+  const serializedHabitsRaw = JSON.parse(JSON.stringify(habits))
+
+  const serializedHabits = serializedHabitsRaw.map((h: any) => {
+    const recurrence = normalizeHabitRecurrence({ type: h.recurrenceType ?? h.recurrence?.type, days: h.recurrenceDays ?? h.recurrence?.days })
+    return { ...h, recurrence, recurrenceType: recurrence.type, recurrenceDays: recurrence.days }
+  })
 
   // Fetch time blocks for today
   const timeBlocks = await TimeBlock.find({

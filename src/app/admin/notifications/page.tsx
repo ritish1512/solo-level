@@ -55,7 +55,8 @@ export default function AdminNotificationsPage() {
   }
 
   useEffect(() => {
-    loadHistory()
+    const id = setTimeout(() => loadHistory(), 0)
+    return () => clearTimeout(id)
   }, [])
 
   // Create notification
@@ -168,7 +169,7 @@ export default function AdminNotificationsPage() {
               <label className="block text-xs font-bold text-zinc-500">Alert Severity</label>
               <select
                 value={form.type}
-                onChange={(e: any) => setForm({ ...form, type: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setForm({ ...form, type: e.target.value as 'info' | 'warning' | 'alert' | 'system' })}
                 className="w-full rounded-lg border border-border bg-zinc-50/50 p-2.5 text-xs font-bold text-zinc-600 outline-none dark:bg-zinc-950/20 dark:text-zinc-400"
               >
                 <option value="info">Info</option>
@@ -182,7 +183,7 @@ export default function AdminNotificationsPage() {
               <label className="block text-xs font-bold text-zinc-500">Recipient Cohort</label>
               <select
                 value={form.recipientGroup}
-                onChange={(e) => setForm({ ...form, recipientGroup: e.target.value })}
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setForm({ ...form, recipientGroup: e.target.value })}
                 className="w-full rounded-lg border border-border bg-zinc-50/50 p-2.5 text-xs font-bold text-zinc-600 outline-none dark:bg-zinc-950/20 dark:text-zinc-400"
               >
                 <option value="all">All Users</option>

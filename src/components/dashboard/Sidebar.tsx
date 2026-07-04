@@ -5,6 +5,8 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import { useTheme } from '@/components/providers'
+import { getUserNotificationsAction } from '@/actions/notificationActions'
+import NotificationBell from '@/components/dashboard/NotificationBell'
 import {
   LayoutDashboard,
   CheckSquare,
@@ -19,6 +21,7 @@ import {
   Video,
   Wallet,
   Trophy,
+  Bell,
   Menu,
   X,
 } from 'lucide-react'
@@ -43,6 +46,7 @@ const links = [
   { name: 'Notes', href: '/dashboard/notes', icon: FileText },
   { name: 'Creator Hub', href: '/dashboard/content', icon: Video },
   { name: 'Finance', href: '/dashboard/finance', icon: Wallet },
+  { name: 'Notifications', href: '/dashboard/notifications', icon: Bell },
   { name: 'Leaderboard', href: '/dashboard/leaderboard', icon: Trophy },
 ]
 
@@ -52,6 +56,21 @@ export default function Sidebar() {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0)
+
+  useEffect(() => {
+    async function fetchNotifications() {
+      try {
+        const notifications = await getUserNotificationsAction()
+        setUnreadNotificationsCount(notifications.filter((n) => !n.isRead).length)
+      } catch (err) {
+        console.error('Failed to fetch unread notification count in sidebar', err)
+      }
+    }
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    return () => clearInterval(interval)
+  }, [pathname])
 
   useEffect(() => {
     async function fetchProfile() {
@@ -109,7 +128,12 @@ export default function Sidebar() {
               }`}
             >
               <Icon className="h-5 w-5 shrink-0" />
-              <span className="truncate">{link.name}</span>
+              <span className="truncate flex-1">{link.name}</span>
+              {link.name === 'Notifications' && unreadNotificationsCount > 0 && (
+                <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                  {unreadNotificationsCount}
+                </span>
+              )}
             </Link>
           )
         })}
@@ -199,13 +223,16 @@ export default function Sidebar() {
           SOLO LEVELING
         </Link>
 
-        <button
-          onClick={toggleTheme}
-          className="min-h-11 min-w-11 rounded-lg border border-border text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
-          aria-label="Toggle theme"
-        >
-          {theme === 'dark' ? <Sun className="mx-auto h-5 w-5" /> : <Moon className="mx-auto h-5 w-5" />}
-        </button>
+        <div className="flex items-center gap-2">
+          <NotificationBell className="border-none bg-transparent shadow-none p-1" />
+          <button
+            onClick={toggleTheme}
+            className="min-h-11 min-w-11 rounded-lg border border-border text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            aria-label="Toggle theme"
+          >
+            {theme === 'dark' ? <Sun className="mx-auto h-5 w-5" /> : <Moon className="mx-auto h-5 w-5" />}
+          </button>
+        </div>
       </header>
 
       {mobileOpen && (

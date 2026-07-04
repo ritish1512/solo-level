@@ -5,16 +5,12 @@ import { useToast } from '@/components/ui/Toast'
 import {
   fetchSystemContent,
   saveSystemContentAction,
-  fetchSanityContent,
-  SanityPostSummary,
 } from '@/actions/adminContentActions'
 import {
   FileText,
   HelpCircle,
   TrendingUp,
   Globe,
-  Database,
-  ExternalLink,
   Plus,
   Trash2,
   Save,
@@ -23,7 +19,7 @@ import {
 
 export default function AdminContentPage() {
   const { toast } = useToast()
-  const [activeTab, setActiveTab] = useState<'seo' | 'faqs' | 'changelog' | 'sanity'>('seo')
+  const [activeTab, setActiveTab] = useState<'seo' | 'faqs' | 'changelog'>('seo')
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
 
@@ -31,35 +27,29 @@ export default function AdminContentPage() {
   const [seo, setSeo] = useState({ title: '', description: '', keywords: '', canonicalUrl: '' })
   const [faqs, setFaqs] = useState<Array<{ id: string; question: string; answer: string }>>([])
   const [changelog, setChangelog] = useState<Array<{ id: string; version: string; date: string; title: string; description: string }>>([])
-  const [sanityPosts, setSanityPosts] = useState<SanityPostSummary[]>([])
-  const [sanityVision, setSanityVision] = useState(false)
 
   // Load everything
   useEffect(() => {
     async function loadContent() {
       setLoading(true)
       try {
-        const [seoData, faqsData, changelogData, sanityData] = await Promise.all([
+        const [seoData, faqsData, changelogData] = await Promise.all([
           fetchSystemContent('seo_metadata'),
           fetchSystemContent('faqs'),
           fetchSystemContent('changelog'),
-          fetchSanityContent(),
         ])
 
         if (seoData) setSeo(seoData)
         if (faqsData) setFaqs(faqsData)
         if (changelogData) setChangelog(changelogData)
-        if (sanityData) {
-          setSanityPosts(sanityData.posts)
-          setSanityVision(sanityData.visionEnabled)
-        }
       } catch (err) {
         toast('Failed to load system layouts content', 'error')
       } finally {
         setLoading(false)
       }
     }
-    loadContent()
+    const id = setTimeout(() => loadContent(), 0)
+    return () => clearTimeout(id)
   }, [])
 
   // Save SEO Metadata
@@ -196,17 +186,6 @@ export default function AdminContentPage() {
           Changelog Releases
         </button>
 
-        <button
-          onClick={() => setActiveTab('sanity')}
-          className={`flex items-center gap-1.5 border-b-2 pb-2 text-xs font-bold transition-all ${
-            activeTab === 'sanity'
-              ? 'border-violet-500 text-violet-500'
-              : 'border-transparent text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
-          }`}
-        >
-          <Database className="h-4 w-4" />
-          Sanity CMS
-        </button>
       </div>
 
       {/* Tab Panel: SEO Metadata */}
@@ -402,62 +381,6 @@ export default function AdminContentPage() {
         </div>
       )}
 
-      {/* Tab Panel: Sanity CMS */}
-      {activeTab === 'sanity' && (
-        <div className="space-y-6 max-w-2xl">
-          {/* Studio launchers */}
-          <div className="rounded-xl border border-violet-500/20 bg-violet-500/5 p-6 backdrop-blur-md flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-sm font-black text-zinc-800 dark:text-zinc-100 flex items-center gap-1.5">
-                Sanity Content Management
-              </h3>
-              <p className="text-xs text-zinc-400 mt-1">
-                Edit schemas, blog articles, resources, and custom content blocks directly in the local Sanity Studio route.
-              </p>
-            </div>
-            <a
-              href="/sanity"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex min-h-10 items-center justify-center gap-1.5 rounded-lg bg-violet-600 px-4 text-xs font-bold text-white shadow hover:bg-violet-700"
-            >
-              Launch Sanity Studio
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          </div>
-
-          {/* CMS items preview */}
-          <div className="rounded-xl border border-border bg-card/25 p-5 backdrop-blur-md">
-            <h4 className="text-xs font-extrabold uppercase tracking-widest text-zinc-400 mb-4">
-              Registered Blog Articles (CMS Sync)
-            </h4>
-
-            {sanityPosts.length > 0 ? (
-              <div className="space-y-3">
-                {sanityPosts.map((post) => (
-                  <div key={post._id} className="flex items-center justify-between border-b border-border/20 pb-3 last:border-0 last:pb-0">
-                    <div>
-                      <p className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{post.title}</p>
-                      {post.slug && (
-                        <p className="text-[10px] font-semibold text-zinc-400">Slug: {post.slug}</p>
-                      )}
-                    </div>
-                    {post.publishedAt && (
-                      <span className="text-[10px] font-bold text-zinc-400">
-                        {new Date(post.publishedAt).toLocaleDateString()}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex h-32 items-center justify-center text-xs font-bold text-zinc-400">
-                No blog content articles detected in local dataset.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

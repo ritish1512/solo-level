@@ -9,6 +9,11 @@ export interface ISubject extends Document {
   credits: number // for CGPA weighting
   attendedClasses: number
   totalClasses: number
+  classNotes: {
+    date: Date
+    attended: boolean
+    note?: string
+  }[]
   createdAt: Date
   updatedAt: Date
 }
@@ -21,6 +26,16 @@ const SubjectSchema: Schema<ISubject> = new Schema(
     credits: { type: Number, default: 3, min: 1 },
     attendedClasses: { type: Number, default: 0, min: 0 },
     totalClasses: { type: Number, default: 0, min: 0 },
+    classNotes: {
+      type: [
+        {
+          date: { type: Date, default: Date.now },
+          attended: { type: Boolean, required: true },
+          note: { type: String, required: false, trim: true },
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 )

@@ -8,12 +8,8 @@ import {
   Calendar, 
   Upload, 
   FileText, 
-  Calculator, 
-  Percent, 
   Check, 
   X, 
-  Clock, 
-  AlertTriangle,
   BookOpen
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -23,7 +19,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { useToast } from '@/components/ui/Toast'
 import { 
   createSubjectAction, 
-  updateSubjectAttendanceAction, 
+  logSubjectAttendanceAction,
   deleteSubjectAction,
   createAssignmentAction,
   updateAssignmentStatusAction,
@@ -36,10 +32,6 @@ interface CollegeClientProps {
   initialSubjects: any[]
   initialAssignments: any[]
   initialExams: any[]
-}
-
-const GRADE_POINTS: { [key: string]: number } = {
-  'O': 10, 'A+': 9, 'A': 8, 'B+': 7, 'B': 6, 'C': 5, 'F': 0
 }
 
 export default function CollegeClient({
@@ -61,15 +53,36 @@ export default function CollegeClient({
   const [showAddExam, setShowAddExam] = useState(false)
 
   // Forms
-  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', credits: '3' })
+  const [subjectForm, setSubjectForm] = useState({ name: '', code: '' })
   const [assignmentForm, setAssignmentForm] = useState({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '' })
   const [examForm, setExamForm] = useState({ subjectId: '', examType: 'Internal', date: '', syllabus: '' })
 
   // File Upload State
   const [uploading, setUploading] = useState(false)
 
-  // CGPA Grade selection state (subjectId -> letterGrade)
-  const [subjectGrades, setSubjectGrades] = useState<{ [key: string]: string }>({})
+  // Attendance notes keyed by subject
+  const [attendanceNotes, setAttendanceNotes] = useState<{ [key: string]: string }>(() => {
+    const notes: { [key: string]: string } = {}
+    initialSubjects.forEach((sub) => {
+      const today = sub.classNotes?.find(
+        (noteEntry: any) => new Date(noteEntry.date).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+      )
+      notes[sub._id] = today?.note || ''
+    })
+    return notes
+  })
+
+  // Attended today checkbox states
+  const [attendedToday, setAttendedToday] = useState<{ [key: string]: boolean }>(() => {
+    const states: { [key: string]: boolean } = {}
+    initialSubjects.forEach((sub) => {
+      const today = sub.classNotes?.find(
+        (noteEntry: any) => new Date(noteEntry.date).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10)
+      )
+      states[sub._id] = today?.attended || false
+    })
+    return states
+  })
 
   // --- FILE UPLOADER TO CLOUDINARY PROXY ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -107,21 +120,12 @@ export default function CollegeClient({
       if (res.success) {
         toast('Subject added!', 'success')
         setSubjects((prev) => [...prev, res.subject])
-        setSubjectForm({ name: '', code: '', credits: '3' })
+        setAttendanceNotes((prev) => ({ ...prev, [res.subject._id]: '' }))
+        setAttendedToday((prev) => ({ ...prev, [res.subject._id]: false }))
+        setSubjectForm({ name: '', code: '' })
         setShowAddSubject(false)
       } else {
         toast(res.error || 'Failed to add subject', 'error')
-      }
-    })
-  }
-
-  const handleUpdateAttendance = (id: string, attended: number, total: number) => {
-    startTransition(async () => {
-      const res = await updateSubjectAttendanceAction(id, attended, total)
-      if (res.success) {
-        setSubjects((prev) => prev.map((s) => (s._id === id ? res.subject : s)))
-      } else {
-        toast(res.error || 'Failed to log attendance', 'error')
       }
     })
   }
@@ -137,6 +141,20 @@ export default function CollegeClient({
         setExams((prev) => prev.filter((ex) => ex.subject?._id !== id && ex.subject !== id))
       } else {
         toast(res.error || 'Failed to delete subject', 'error')
+      }
+    })
+  }
+
+  const handleSaveClassLog = (id: string) => {
+    startTransition(async () => {
+      const attended = attendedToday[id] || false
+      const note = attendanceNotes[id]?.trim() || ''
+      const res = await logSubjectAttendanceAction(id, attended, note)
+      if (res.success) {
+        toast('Today\'s class log saved successfully.', 'success')
+        setSubjects((prev) => prev.map((s) => (s._id === id ? res.subject : s)))
+      } else {
+        toast(res.error || 'Failed to save log', 'error')
       }
     })
   }
@@ -222,50 +240,53 @@ export default function CollegeClient({
     })
   }
 
-  // --- ATTENDANCE PREDICTION LOGIC ---
-  const getAttendanceMetrics = (attended: number, total: number) => {
-    const percentage = total > 0 ? (attended / total) * 100 : 0
-    
-    if (total === 0) {
-      return { percentage: 0, text: 'No classes logged yet.', color: 'text-zinc-400' }
-    }
-
-    if (percentage >= 75) {
-      // safeMisses = Math.floor(attended / 0.75 - total)
-      const safeMiss = Math.floor(attended / 0.75 - total)
-      return {
-        percentage: Math.round(percentage),
-        text: safeMiss > 0 ? `You can safely miss ${safeMiss} class(es).` : 'You are exactly on the line. Attend next class!',
-        color: 'text-emerald-500',
-        status: 'good'
-      }
-    } else {
-      // neededAttend = 3T - 4A
-      const neededAttend = Math.max(0, 3 * total - 4 * attended)
-      return {
-        percentage: Math.round(percentage),
-        text: `Must attend ${neededAttend} consecutive class(es) to restore 75%.`,
-        color: 'text-rose-500',
-        status: 'danger'
-      }
-    }
+  const getTodayAttendance = (subject: any) => {
+    const todayKey = new Date().toISOString().slice(0, 10)
+    const notes = subject.classNotes || []
+    return notes.find((note: any) => new Date(note.date).toISOString().slice(0, 10) === todayKey) || null
   }
 
-  // --- CGPA CALCULATOR LOGIC ---
-  const calculateGPA = () => {
-    let totalCredits = 0
-    let weightedPoints = 0
-
-    subjects.forEach((s) => {
-      const grade = subjectGrades[s._id]
-      if (grade && GRADE_POINTS[grade] !== undefined) {
-        totalCredits += s.credits
-        weightedPoints += s.credits * GRADE_POINTS[grade]
-      }
-    })
-
-    return totalCredits > 0 ? (weightedPoints / totalCredits).toFixed(2) : '0.00'
+  const getLastNote = (subject: any) => {
+    const notes = subject.classNotes || []
+    return notes.length ? notes[notes.length - 1] : null
   }
+
+  const getLastLogInfo = (subject: any) => {
+    const today = getTodayAttendance(subject)
+    if (today) {
+      return `Today's log saved (${today.attended ? 'Attended' : 'Missed'})`
+    }
+    const last = getLastNote(subject)
+    if (last) {
+      const dateStr = new Date(last.date).toLocaleDateString([], { month: 'short', day: 'numeric' })
+      return `Last log: ${dateStr} (${last.attended ? 'Attended' : 'Missed'})`
+    }
+    return 'No class note recorded yet.'
+  }
+
+  const timelineEntries = [
+    ...assignments.map((ass) => ({
+      id: ass._id,
+      type: 'Assignment' as const,
+      title: ass.title,
+      subject: ass.subject?.name || 'Coursework',
+      date: new Date(ass.dueDate),
+      status: ass.status,
+      description: ass.description,
+      fileUrl: ass.fileUrl,
+    })),
+    ...exams.map((ex) => ({
+      id: ex._id,
+      type: 'Exam' as const,
+      title: `${ex.subject?.name || 'Course'} ${ex.examType} Exam`,
+      subject: ex.subject?.name || 'Coursework',
+      date: new Date(ex.date),
+      status: ex.marksObtained !== undefined ? 'Graded' : 'Scheduled',
+      description: ex.syllabus,
+      marksObtained: ex.marksObtained,
+      maxMarks: ex.maxMarks,
+    })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime())
 
   return (
     <div className="space-y-6">
@@ -273,7 +294,7 @@ export default function CollegeClient({
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight text-zinc-950 dark:text-white">College Manager</h1>
-          <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium">Monitor attendance, track assignment pdfs, and project GPA</p>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium">Track subjects, log today’s class activities, and manage a unified timetable.</p>
         </div>
         <div className="flex gap-2">
           <Button onClick={() => setShowAddSubject(true)} variant="outline" size="sm" className="gap-1.5 h-8.5 cursor-pointer">
@@ -288,245 +309,175 @@ export default function CollegeClient({
         </div>
       </div>
 
-      {/* Grid: Subjects/Attendance & CGPA */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
-        {/* Attendance Tracker Column (Left spans 2) */}
-        <div className="md:col-span-2 space-y-6">
-          <Card className="border-border bg-card/30">
-            <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Subjects & Attendance</CardTitle>
-                <CardDescription className="text-xs">Class tracking (75% baseline requirement)</CardDescription>
-              </div>
-              <Percent className="w-5 h-5 text-indigo-500" />
-            </CardHeader>
-            <CardContent className="py-4 space-y-4">
-              {subjects.length === 0 ? (
-                <p className="text-center text-xs text-zinc-500 italic py-8">No subjects configured. Add your college classes above.</p>
-              ) : (
-                subjects.map((sub) => {
-                  const { percentage, text, color, status } = getAttendanceMetrics(sub.attendedClasses, sub.totalClasses)
-                  return (
-                    <div key={sub._id} className="p-4 rounded-lg border border-border bg-card hover:border-zinc-300 dark:hover:border-zinc-700 transition-all flex flex-col sm:flex-row justify-between gap-4">
-                      
-                      {/* Name / Info */}
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">{sub.name}</h3>
-                          {sub.code && <span className="text-[10px] font-mono font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-900 px-1 py-0.5 rounded border border-border">{sub.code}</span>}
-                        </div>
-                        <p className={`text-xs font-semibold ${color}`}>{text}</p>
-                        <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Credits: {sub.credits}</p>
-                      </div>
-
-                      {/* Attendance inputs */}
-                      <div className="flex items-center gap-3.5 self-end sm:self-center">
-                        {/* Attendance Counter */}
-                        <div className="flex items-center border border-border rounded overflow-hidden h-8.5 bg-background">
-                          <button 
-                            onClick={() => handleUpdateAttendance(sub._id, Math.max(0, sub.attendedClasses - 1), Math.max(0, sub.totalClasses - 1))}
-                            className="px-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-extrabold cursor-pointer border-r border-border"
-                          >
-                            -
-                          </button>
-                          <span className="px-3 text-xs font-mono font-bold text-zinc-900 dark:text-white">
-                            {sub.attendedClasses} / {sub.totalClasses}
-                          </span>
-                          <button 
-                            onClick={() => handleUpdateAttendance(sub._id, sub.attendedClasses + 1, sub.totalClasses + 1)}
-                            className="px-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-xs font-extrabold cursor-pointer border-l border-border"
-                          >
-                            +
-                          </button>
-                        </div>
-
-                        {/* Direct miss log (Increments only total classes, keeping attended same) */}
-                        <Button 
-                          onClick={() => handleUpdateAttendance(sub._id, sub.attendedClasses, sub.totalClasses + 1)}
-                          variant="ghost" 
-                          size="sm" 
-                          className="h-8.5 text-xs text-rose-500 border border-transparent hover:border-rose-500/20 hover:bg-rose-500/10 cursor-pointer"
-                        >
-                          Miss Class
-                        </Button>
-
-                        {/* Delete Subject */}
-                        <button
-                          onClick={() => handleDeleteSubject(sub._id)}
-                          className="p-1.5 text-zinc-400 hover:text-rose-500 rounded hover:bg-rose-500/10 transition-colors cursor-pointer"
-                          aria-label="Delete subject"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                    </div>
-                  )
-                })
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* CGPA Calculator Column (Right spans 1) */}
-        <Card className="border-border bg-card/30 self-start">
-          <CardHeader className="pb-2 border-b border-border/40">
-            <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">CGPA Calculator</CardTitle>
-            <CardDescription className="text-xs">Estimate GPA based on course grades</CardDescription>
+      <div className="space-y-6">
+        <Card className="border-border bg-card/30">
+          <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">My Course Subjects</CardTitle>
+              <CardDescription className="text-xs">Select if you attended today and write a short study note</CardDescription>
+            </div>
+            <BookOpen className="w-5 h-5 text-indigo-500" />
           </CardHeader>
           <CardContent className="py-4 space-y-4">
             {subjects.length === 0 ? (
-              <p className="text-xs text-zinc-500 italic py-4 text-center">Add subjects to compute SGPA/CGPA.</p>
+              <p className="text-center text-xs text-zinc-500 italic py-8">No subjects configured. Add your course list above.</p>
             ) : (
-              <div className="space-y-3.5">
-                <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
-                  {subjects.map((sub) => (
-                    <div key={sub._id} className="flex justify-between items-center text-xs">
-                      <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate w-32">{sub.name}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-zinc-400 mr-2">({sub.credits} Credits)</span>
-                        <select
-                          value={subjectGrades[sub._id] || ''}
-                          onChange={(e) => setSubjectGrades((prev) => ({ ...prev, [sub._id]: e.target.value }))}
-                          className="h-8 rounded border border-border bg-background/70 text-[11px] font-bold outline-none px-1.5"
-                        >
-                          <option value="">Grade</option>
-                          <option value="O">O (10)</option>
-                          <option value="A+">A+ (9)</option>
-                          <option value="A">A (8)</option>
-                          <option value="B+">B+ (7)</option>
-                          <option value="B">B (6)</option>
-                          <option value="C">C (5)</option>
-                          <option value="F">F (0)</option>
-                        </select>
+              subjects.map((sub) => {
+                const lastNote = getLastNote(sub)
+                const isAttended = attendedToday[sub._id] ?? false
+
+                return (
+                  <div key={sub._id} className="space-y-4 rounded-2xl border border-border bg-background p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-bold text-sm text-zinc-950 dark:text-zinc-100">{sub.name}</h3>
+                          {sub.code && (
+                            <span className="text-[10px] font-mono font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-border">
+                              {sub.code}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center">
+                        <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-400 select-none">
+                          <input
+                            type="checkbox"
+                            checked={isAttended}
+                            onChange={(e) => setAttendedToday((prev) => ({ ...prev, [sub._id]: e.target.checked }))}
+                            className="h-4.5 w-4.5 rounded border-zinc-300 dark:border-zinc-700 bg-background text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          Attended today?
+                        </label>
                       </div>
                     </div>
-                  ))}
-                </div>
 
-                <div className="border-t border-border/40 pt-4 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-950/20 p-3 rounded-lg border">
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-zinc-400 leading-none">Weighted CGPA</p>
-                    <p className="text-3xl font-extrabold font-mono text-indigo-500 mt-1">{calculateGPA()}</p>
+                    <AnimatePresence initial={false}>
+                      {isAttended && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="overflow-hidden space-y-2"
+                        >
+                          <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">What happened in class? (Study focus for this evening)</label>
+                          <textarea
+                            value={attendanceNotes[sub._id] || ''}
+                            onChange={(e) => setAttendanceNotes((prev) => ({ ...prev, [sub._id]: e.target.value }))}
+                            rows={3}
+                            placeholder="Topics discussed, assignments set, what to read tonight..."
+                            className="w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {lastNote && (
+                      <div className="bg-zinc-50 dark:bg-zinc-900/50 p-2.5 rounded-lg border border-border/60 text-xs text-zinc-600 dark:text-zinc-400">
+                        <span className="font-bold text-[10px] uppercase tracking-wider text-zinc-400 block mb-1">Latest Logged Note ({new Date(lastNote.date).toLocaleDateString()}):</span>
+                        <p className="italic">{lastNote.note || 'Attended with no written study note.'}</p>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/40 pt-3">
+                      <div className="flex gap-2">
+                        <Button 
+                          onClick={() => handleSaveClassLog(sub._id)} 
+                          size="sm" 
+                          variant="secondary"
+                          isLoading={isPending}
+                        >
+                          Save Today's Log
+                        </Button>
+                        <Button onClick={() => handleDeleteSubject(sub._id)} size="sm" variant="destructive">
+                          Remove Subject
+                        </Button>
+                      </div>
+                      <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-[0.14em]">
+                        {getLastLogInfo(sub)}
+                      </span>
+                    </div>
                   </div>
-                  <Calculator className="w-8 h-8 text-zinc-300 dark:text-zinc-700" />
-                </div>
-              </div>
+                )
+              })
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Grid: Assignments & Exams */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        
-        {/* Assignments Checklist Card */}
-        <Card className="border-border bg-card/30">
-          <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Homework & Assignments</CardTitle>
-              <CardDescription className="text-xs">Submission checkpoints and grades</CardDescription>
-            </div>
-            <FileText className="w-5 h-5 text-indigo-500" />
-          </CardHeader>
-          <CardContent className="py-4 space-y-2">
-            {assignments.length === 0 ? (
-              <p className="text-xs text-zinc-500 italic py-6 text-center">No assignments listed.</p>
-            ) : (
-              assignments.map((ass) => (
-                <div key={ass._id} className="p-3 rounded-lg border border-border bg-card hover:border-zinc-300 dark:hover:border-zinc-700 transition-all flex justify-between items-center gap-3">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => handleToggleAssignment(ass._id, ass.status)}
-                      className={`w-5 h-5 rounded border flex items-center justify-center cursor-pointer transition-all ${
-                        ass.status === 'Completed'
-                          ? 'bg-indigo-500 border-indigo-500 text-white'
-                          : 'border-zinc-300 dark:border-zinc-700'
-                      }`}
-                    >
-                      {ass.status === 'Completed' && <Check className="w-3 h-3 stroke-[3]" />}
-                    </button>
-                    <div>
-                      <p className={`text-sm font-bold ${ass.status === 'Completed' ? 'line-through text-zinc-400' : 'text-zinc-950 dark:text-zinc-50'}`}>
-                        {ass.title}
-                      </p>
-                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">
-                        {ass.subject?.name || 'Coursework'}
-                      </p>
+      <Card className="border-border bg-card/30">
+        <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Unified Timetable</CardTitle>
+            <CardDescription className="text-xs">Homework, exams, and upcoming deadlines in one place</CardDescription>
+          </div>
+          <Calendar className="w-5 h-5 text-indigo-500" />
+        </CardHeader>
+        <CardContent className="py-4 space-y-3">
+          {timelineEntries.length === 0 ? (
+            <p className="text-xs text-zinc-500 italic py-6 text-center">No coursework or exams scheduled.</p>
+          ) : (
+            timelineEntries.map((item) => (
+              <div key={item.id} className="rounded-2xl border border-border bg-background p-4 transition-all hover:border-zinc-300 dark:hover:border-zinc-700">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${item.type === 'Assignment' ? 'bg-indigo-500/10 text-indigo-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                        {item.type}
+                      </span>
+                      <h3 className="text-sm font-bold text-zinc-950 dark:text-zinc-100">{item.title}</h3>
                     </div>
+                    <p className="text-[11px] text-zinc-500">{item.subject}</p>
                   </div>
-
-                  <div className="flex items-center gap-4">
-                    {/* Attachment links */}
-                    {ass.fileUrl && (
-                      <a 
-                        href={ass.fileUrl} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="text-indigo-500 hover:text-indigo-400 p-1 rounded hover:bg-indigo-500/10"
-                        title="View Document"
-                      >
-                        <FileText className="w-4.5 h-4.5" />
-                      </a>
-                    )}
-                    
-                    <span className="text-[10px] font-semibold text-zinc-400">
-                      {new Date(ass.dueDate).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  <div className="space-y-1 text-right">
+                    <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-400">{item.status}</span>
+                    <span className="text-xs font-semibold text-zinc-500">
+                      {item.date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
                     </span>
-
-                    <button 
-                      onClick={() => handleDeleteAssignment(ass._id)}
-                      className="text-zinc-400 hover:text-rose-500 p-1 rounded"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
 
-        {/* Exams Timelines */}
-        <Card className="border-border bg-card/30">
-          <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Exams Timeline</CardTitle>
-              <CardDescription className="text-xs">Scheduled internal and external exams</CardDescription>
-            </div>
-            <Calendar className="w-5 h-5 text-indigo-500" />
-          </CardHeader>
-          <CardContent className="py-4 space-y-2">
-            {exams.length === 0 ? (
-              <p className="text-xs text-zinc-500 italic py-6 text-center">No exams scheduled.</p>
-            ) : (
-              exams.map((ex) => (
-                <div key={ex._id} className="p-4 rounded-lg border border-border bg-card hover:border-zinc-300 dark:hover:border-zinc-700 transition-all space-y-2">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-bold text-sm text-zinc-950 dark:text-zinc-100">
-                        {ex.subject?.name || 'Internal Exam'}
-                      </h4>
-                      <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">{ex.examType} Exam</p>
-                    </div>
-                    <span className="text-xs font-mono font-bold text-indigo-500">
-                      {new Date(ex.date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                {item.description && (
+                  <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-300">{item.description}</p>
+                )}
+
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  {item.type === 'Assignment' && (
+                    <>
+                      <Button
+                        onClick={() => handleToggleAssignment(item.id, item.status)}
+                        size="sm"
+                        variant={item.status === 'Completed' ? 'secondary' : 'outline'}
+                      >
+                        {item.status === 'Completed' ? 'Mark Todo' : 'Mark Completed'}
+                      </Button>
+                      <Button onClick={() => handleDeleteAssignment(item.id)} size="sm" variant="destructive">
+                        Delete
+                      </Button>
+                      {item.fileUrl && (
+                        <a
+                          href={item.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-indigo-500 hover:text-indigo-400"
+                        >
+                          View attachment
+                        </a>
+                      )}
+                    </>
+                  )}
+                  {item.type === 'Exam' && item.marksObtained !== undefined && (
+                    <span className="rounded-full bg-zinc-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-600">
+                      Score: {item.marksObtained}/{item.maxMarks ?? '-'}
                     </span>
-                  </div>
-                  
-                  {ex.syllabus && (
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-50/50 dark:bg-zinc-900/50 p-2 rounded border border-border/45">
-                      <strong className="text-[10px] uppercase font-bold text-zinc-400 block mb-0.5">Syllabus</strong>
-                      {ex.syllabus}
-                    </p>
                   )}
                 </div>
-              ))
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
 
       {/* --- FORMS POPUPS MODALS OVERLAYS --- */}
       
@@ -545,10 +496,6 @@ export default function CollegeClient({
                 <div className="space-y-1">
                   <Label htmlFor="subCode">Subject Code</Label>
                   <Input id="subCode" type="text" placeholder="e.g. CS102" value={subjectForm.code} onChange={(e) => setSubjectForm((prev) => ({ ...prev, code: e.target.value }))} />
-                </div>
-                <div className="space-y-1">
-                  <Label htmlFor="subCredits">Credits</Label>
-                  <Input id="subCredits" type="number" min="1" max="10" value={subjectForm.credits} onChange={(e) => setSubjectForm((prev) => ({ ...prev, credits: e.target.value }))} required />
                 </div>
                 <Button type="submit" variant="primary" className="w-full" isLoading={isPending}>Add Subject</Button>
               </form>

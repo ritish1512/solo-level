@@ -77,10 +77,22 @@ export default function LoginForm() {
         })
 
         if (res?.error) {
-          if (res.error.includes('UNVERIFIED')) {
+          let cleanMessage = 'Invalid credentials.'
+
+          // Auth.js v5 embeds the rich string message into the query param of the execution URL response
+          if (res.url) {
+            const urlObj = new URL(res.url)
+            const errorQuery = urlObj.searchParams.get('error')
+            if (errorQuery && errorQuery !== 'CredentialsSignin') {
+              cleanMessage = errorQuery
+            }
+          }
+
+          if (cleanMessage.includes('UNVERIFIED')) {
             toast('Please verify your email before logging in. A link was sent to your inbox.', 'warning')
           } else {
-            toast(res.error || 'Invalid credentials.', 'error')
+            // This will now cleanly display "No user found with this email" or "Incorrect password"
+            toast(cleanMessage, 'error') 
           }
         } else {
           toast('Logged in successfully!', 'success')

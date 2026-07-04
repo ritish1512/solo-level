@@ -1,8 +1,16 @@
 import mongoose, { Schema, Document, Model } from 'mongoose'
 
+export type HabitRecurrenceType = 'daily' | 'weekdays' | 'weekends' | 'custom-days' | 'monthly-start' | 'monthly-end'
+
 export interface IHabit extends Document {
   user: mongoose.Types.ObjectId
   name: string
+  recurrence: {
+    type: HabitRecurrenceType
+    days?: string[]
+  }
+  recurrenceType: HabitRecurrenceType
+  recurrenceDays: string[]
   completedDates: string[] // Array of YYYY-MM-DD strings
   streak: number
   longestStreak: number
@@ -21,6 +29,26 @@ const HabitSchema: Schema<IHabit> = new Schema(
       type: String,
       required: [true, 'Habit name is required'],
       trim: true,
+    },
+    recurrence: {
+      type: {
+        type: String,
+        enum: ['daily', 'weekdays', 'weekends', 'custom-days', 'monthly-start', 'monthly-end'],
+        default: 'daily',
+      },
+      days: {
+        type: [String],
+        default: [],
+      },
+    },
+    recurrenceType: {
+      type: String,
+      enum: ['daily', 'weekdays', 'weekends', 'custom-days', 'monthly-start', 'monthly-end'],
+      default: 'daily',
+    },
+    recurrenceDays: {
+      type: [String],
+      default: [],
     },
     completedDates: {
       type: [String],

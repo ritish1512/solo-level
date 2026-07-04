@@ -31,7 +31,7 @@ import {
   deleteTaskAction, 
   updateTaskStatusAction 
 } from '@/actions/taskActions'
-import { getReminderPresets, formatMinutesToTime } from '@/services/reminderService'
+import { getReminderPresets, formatMinutesToTime } from '@/lib/reminderUtils'
 
 interface TasksClientProps {
   initialTasks: any[]
@@ -377,12 +377,12 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                         </div>
 
                         {/* Status switcher overlay triggers */}
-                        <div className="flex gap-1 justify-end pt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex gap-1 justify-end pt-1 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           {getStatusMoveOptions(task.status).map((opt: any) => (
                             <button
                               key={opt}
                               onClick={() => handleMoveStatus(task._id, opt)}
-                              className="text-[9px] font-bold px-2 py-0.5 rounded border border-border bg-background hover:bg-indigo-500 hover:text-white transition-all cursor-pointer shadow-sm text-zinc-500"
+                              className="text-[9px] font-bold px-2 py-0.5 rounded border border-border bg-indigo-500 md:bg-background md:hover:bg-indigo-500 text-zinc-100 md:hover:text-white transition-all cursor-pointer shadow-sm"
                             >
                               Move {opt}
                             </button>
@@ -520,7 +520,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                     <Label htmlFor="taskDeadline">Deadline Date</Label>
                     <Input
                       id="taskDeadline"
-                      type="date"
+                      type="datetime-local"
                       value={formData.deadline}
                       onChange={(e) => setFormData((prev) => ({ ...prev, deadline: e.target.value }))}
                       required

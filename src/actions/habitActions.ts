@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Habit, { IHabit } from '@/models/Habit'
 import User from '@/models/User'
+import { isHabitDueForDate, normalizeHabitRecurrence } from '@/lib/habitRecurrence'
 
 export interface HabitResponse {
   success: boolean
@@ -98,7 +99,10 @@ export async function calculateStreak(completedDates: string[]): Promise<{ curre
   }
 }
 
-export async function createHabitAction(name: string): Promise<HabitResponse> {
+export async function createHabitAction(
+  name: string,
+  recurrence?: { type?: string; days?: string[] } | null
+): Promise<HabitResponse> {
   try {
     const session = await checkAuth()
     
@@ -117,18 +121,32 @@ export async function createHabitAction(name: string): Promise<HabitResponse> {
       return { success: false, error: 'A habit with this name already exists.' }
     }
 
+    const normalizedRecurrence = normalizeHabitRecurrence(
+      recurrence && typeof recurrence === 'object'
+        ? { type: recurrence.type as any, days: recurrence.days || [] }
+        : { type: 'daily', days: [] }
+    )
+
     const newHabit = await Habit.create({
       user: new mongoose.Types.ObjectId(session.user.id),
       name: name.trim(),
+      recurrence: normalizedRecurrence,
+      recurrenceType: normalizedRecurrence.type,
+      recurrenceDays: normalizedRecurrence.days,
       completedDates: [],
       streak: 0,
       longestStreak: 0,
     })
+    const habitObj: any = JSON.parse(JSON.stringify(newHabit))
+    // Ensure response includes normalized recurrence flat fields for clients
+    habitObj.recurrence = normalizedRecurrence
+    habitObj.recurrenceType = normalizedRecurrence.type
+    habitObj.recurrenceDays = normalizedRecurrence.days
 
     return {
       success: true,
       message: 'Habit tracking initialized!',
-      habit: JSON.parse(JSON.stringify(newHabit)),
+      habit: habitObj,
     }
   } catch (error: any) {
     console.error('Create Habit Action Error:', error)
@@ -143,9 +161,23 @@ export async function getHabitsAction(): Promise<HabitResponse> {
 
     const habits = await Habit.find({ user: session.user.id }).sort({ createdAt: -1 })
 
+    // Ensure recurrence fields are normalized for older documents that may lack the flat fields
+    const normalized = habits.map((h) => {
+      const recurrence = normalizeHabitRecurrence({
+        type: (h as any).recurrenceType ?? (h as any).recurrence?.type,
+        days: (h as any).recurrenceDays ?? (h as any).recurrence?.days,
+      })
+
+      const obj = JSON.parse(JSON.stringify(h))
+      obj.recurrence = recurrence
+      obj.recurrenceType = recurrence.type
+      obj.recurrenceDays = recurrence.days
+      return obj
+    })
+
     return {
       success: true,
-      habits: JSON.parse(JSON.stringify(habits)),
+      habits: normalized,
     }
   } catch (error: any) {
     console.error('Get Habits Action Error:', error)
@@ -161,6 +193,16 @@ export async function toggleHabitDateAction(habitId: string, dateStr: string): P
     const habit = await Habit.findOne({ _id: habitId, user: session.user.id })
     if (!habit) {
       return { success: false, error: 'Habit not found.' }
+    }
+
+    const targetDate = new Date(`${dateStr}T00:00:00`)
+    const recurrence = normalizeHabitRecurrence({
+      type: habit.recurrenceType ?? habit.recurrence?.type,
+      days: habit.recurrenceDays ?? habit.recurrence?.days,
+    })
+
+    if (!isHabitDueForDate(recurrence, targetDate)) {
+      return { success: false, error: 'This habit is not scheduled for that date.' }
     }
 
     const index = habit.completedDates.indexOf(dateStr)

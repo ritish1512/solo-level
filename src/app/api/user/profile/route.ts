@@ -15,7 +15,7 @@ export async function GET() {
     await dbConnect()
 
     const user = await User.findById(session.user.id).select(
-      'name email image xp level streak longestStreak role'
+      'name email image xp level streak longestStreak role emailVerified'
     )
 
     if (!user) {
@@ -31,6 +31,7 @@ export async function GET() {
       streak: user.streak,
       longestStreak: user.longestStreak,
       role: user.role,
+      emailVerified: user.emailVerified ? user.emailVerified.toISOString() : null,
     })
   } catch (error: any) {
     console.error('Profile API Error:', error)

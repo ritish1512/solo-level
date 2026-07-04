@@ -51,7 +51,8 @@ export default function AdminSystemPage() {
   }
 
   useEffect(() => {
-    loadDiagnostics()
+    const id = setTimeout(() => loadDiagnostics(), 0)
+    return () => clearTimeout(id)
   }, [])
 
   // Execute API latency checks

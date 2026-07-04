@@ -6,6 +6,8 @@ export interface ITransaction extends Document {
   amount: number
   category: string
   description?: string
+  source?: string
+  billUrl?: string
   date: Date
   createdAt: Date
   updatedAt: Date
@@ -36,6 +38,16 @@ const TransactionSchema: Schema<ITransaction> = new Schema(
     description: {
       type: String,
       required: false,
+    },
+    source: {
+      type: String,
+      required: false,
+      trim: true,
+    },
+    billUrl: {
+      type: String,
+      required: false,
+      trim: true,
     },
     date: {
       type: Date,

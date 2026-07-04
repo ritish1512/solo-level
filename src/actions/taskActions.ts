@@ -83,7 +83,6 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       tags: tags || [],
       notes,
       progress: 0,
-      recurring: false,
       reminderOffset: reminderOffset ? Number(reminderOffset) : 0,
       reminderConfigs: taskReminderConfigs,
       attachments: [],
@@ -168,7 +167,6 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
       energyRequired,
       deadline,
       estimatedTime,
-      actualTime,
       tags,
       notes,
       reminderOffset,
@@ -187,7 +185,6 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
     task.notes = notes !== undefined ? notes : task.notes
     task.tags = tags || task.tags
     task.estimatedTime = estimatedTime !== undefined ? Number(estimatedTime) : task.estimatedTime
-    task.actualTime = actualTime !== undefined ? Number(actualTime) : task.actualTime
     
     if (deadline) {
       task.deadline = new Date(deadline)
@@ -252,7 +249,7 @@ export async function deleteTaskAction(id: string): Promise<TaskResponse> {
 
     // Delete all reminders associated with this task
     await deleteTaskReminders(id)
-    })
+    
 
     await task.deleteOne()
 

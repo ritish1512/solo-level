@@ -18,11 +18,9 @@ export interface ITask extends Document {
   status: 'Todo' | 'In Progress' | 'Testing' | 'Completed'
   deadline: Date
   estimatedTime?: number // In minutes
-  actualTime?: number // In minutes
   tags: string[]
   notes?: string
   progress: number // 0 to 100
-  recurring: boolean
   reminderOffset?: number // minutes before deadline, e.g., 10, 30, 60, 1440 (deprecated, use reminderConfigs)
   reminderSent?: boolean // Track if email reminder was sent (deprecated)
   reminderConfigs: IReminderConfig[] // New: multiple reminders per task
@@ -86,11 +84,6 @@ const TaskSchema: Schema<ITask> = new Schema(
       type: Number,
       required: false,
     },
-    actualTime: {
-      type: Number,
-      required: false,
-      default: 0,
-    },
     tags: {
       type: [String],
       default: [],
@@ -104,10 +97,6 @@ const TaskSchema: Schema<ITask> = new Schema(
       default: 0,
       min: 0,
       max: 100,
-    },
-    recurring: {
-      type: Boolean,
-      default: false,
     },
     reminderOffset: {
       type: Number,

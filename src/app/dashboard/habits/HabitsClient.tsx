@@ -3,6 +3,7 @@
 import React, { useState, useTransition } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Plus, Trash2, Flame, Award, Check } from 'lucide-react'
+import { HABIT_RECURRENCE_DAYS, HABIT_RECURRENCE_LABELS, isHabitDueForDate, getHabitRecurrenceLabel, type HabitRecurrenceType } from '@/lib/habitRecurrence'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card, CardContent } from '@/components/ui/Card'
@@ -20,6 +21,8 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
   // State
   const [habits, setHabits] = useState<any[]>(initialHabits)
   const [newHabitName, setNewHabitName] = useState('')
+  const [recurrenceType, setRecurrenceType] = useState<HabitRecurrenceType>('daily')
+  const [selectedDays, setSelectedDays] = useState<string[]>([])
 
   const todayStr = new Date().toISOString().split('T')[0]
 
@@ -29,11 +32,19 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
     if (!newHabitName.trim()) return
 
     startTransition(async () => {
-      const res = await createHabitAction(newHabitName)
+      const recurrence = {
+        type: recurrenceType,
+        days: recurrenceType === 'custom-days' ? selectedDays : [],
+      }
+
+      const res = await createHabitAction(newHabitName, recurrence)
       if (res.success) {
         toast(res.message || 'Habit created!', 'success')
+        // prefer server-returned habit shape (with normalized recurrence fields)
         setHabits((prev) => [res.habit, ...prev])
         setNewHabitName('')
+        setRecurrenceType('daily')
+        setSelectedDays([])
       } else {
         toast(res.error || 'Failed to create habit', 'error')
       }
@@ -41,7 +52,12 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
   }
 
   // Toggle habit check status
-  const handleToggleHabit = (habitId: string) => {
+  const handleToggleHabit = (habitId: string, recurrence: any) => {
+    if (!isHabitDueForDate(recurrence, new Date())) {
+      toast('This habit is only available on its scheduled days.', 'info')
+      return
+    }
+
     startTransition(async () => {
       const res = await toggleHabitDateAction(habitId, todayStr)
       if (res.success) {
@@ -68,6 +84,10 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
         toast(res.error || 'Failed to delete habit', 'error')
       }
     })
+  }
+
+  const toggleDay = (day: string) => {
+    setSelectedDays((prev) => prev.includes(day) ? prev.filter((item) => item !== day) : [...prev, day])
   }
 
   // Helper to render the contribution/completion heatmap grid for the current month
@@ -150,23 +170,55 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
       {/* Input panel Form */}
       <Card className="border-border bg-card/40 backdrop-blur-md">
         <CardContent className="pt-6">
-          <form onSubmit={handleCreateHabit} className="flex gap-2">
-            <Input
-              placeholder="e.g. Running, LeetCode, Drink Water, Sleep before 9"
-              value={newHabitName}
-              onChange={(e) => setNewHabitName(e.target.value)}
-              disabled={isPending}
-              required
-              className="bg-background/50 border-border"
-            />
-            <Button
-              type="submit"
-              variant="primary"
-              className="gap-2 cursor-pointer shadow-sm"
-              isLoading={isPending}
-            >
-              <Plus className="w-4 h-4" /> Start Tracking
-            </Button>
+          <form onSubmit={handleCreateHabit} className="space-y-3">
+            <div className="flex flex-col gap-2 md:flex-row">
+              <Input
+                placeholder="e.g. Running, LeetCode, Drink Water, Sleep before 9"
+                value={newHabitName}
+                onChange={(e) => setNewHabitName(e.target.value)}
+                disabled={isPending}
+                required
+                className="bg-background/50 border-border"
+              />
+              <Button
+                type="submit"
+                variant="primary"
+                className="gap-2 cursor-pointer shadow-sm"
+                isLoading={isPending}
+              >
+                <Plus className="w-4 h-4" /> Start Tracking
+              </Button>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background/40 p-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-wrap gap-2">
+                {(['daily', 'weekdays', 'weekends', 'monthly-start', 'monthly-end', 'custom-days'] as HabitRecurrenceType[]).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setRecurrenceType(option)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${recurrenceType === option ? 'bg-indigo-500 text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'}`}
+                  >
+                    {HABIT_RECURRENCE_LABELS[option]}
+                  </button>
+                ))}
+              </div>
+
+              {recurrenceType === 'custom-days' && (
+                <div className="flex flex-wrap gap-1.5">
+                  {HABIT_RECURRENCE_DAYS.map((day) => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => toggleDay(day)}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase ${selectedDays.includes(day) ? 'bg-emerald-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300'}`}
+                    >
+                      {day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -180,7 +232,13 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
             </p>
           ) : (
             habits.map((habit) => {
-              const isCompletedToday = habit.completedDates.includes(todayStr)
+              const recurrenceObj = {
+                type: habit.recurrenceType ?? habit.recurrence?.type,
+                days: habit.recurrenceDays ?? habit.recurrence?.days,
+              }
+
+              const isDueToday = isHabitDueForDate(recurrenceObj, new Date())
+              const isCompletedToday = isDueToday && habit.completedDates.includes(todayStr)
               const totalCompletions = habit.completedDates.length
               
               return (
@@ -198,9 +256,9 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
                     {/* Status checkbox and Title */}
                     <div className="flex items-center gap-3.5">
                       <button
-                        onClick={() => handleToggleHabit(habit._id)}
-                        disabled={isPending}
-                        className={`w-7 h-7 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                        onClick={() => handleToggleHabit(habit._id, recurrenceObj)}
+                        disabled={isPending || !isDueToday}
+                        className={`w-7 h-7 rounded-full border flex items-center justify-center transition-all ${isDueToday ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} ${
                           isCompletedToday
                             ? 'bg-indigo-500 border-indigo-500 text-white shadow-md'
                             : 'border-zinc-300 dark:border-zinc-700 hover:border-indigo-500'
@@ -214,7 +272,7 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
                           {habit.name}
                         </h3>
                         <p className="text-xs text-zinc-400 dark:text-zinc-500 font-medium">
-                          Checked off {totalCompletions} time(s) total
+                          {getHabitRecurrenceLabel(recurrenceObj)} • {isDueToday ? `Due today` : `Available on scheduled days`} • Checked off {totalCompletions} time(s) total
                         </p>
                       </div>
                     </div>

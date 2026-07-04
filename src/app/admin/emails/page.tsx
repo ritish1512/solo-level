@@ -123,11 +123,14 @@ export default function AdminEmailsPage() {
   }
 
   useEffect(() => {
-    if (activeTab === 'logs') {
-      loadLogs()
-    } else {
-      setLoading(false)
-    }
+    const id = setTimeout(() => {
+      if (activeTab === 'logs') {
+        loadLogs()
+      } else {
+        setLoading(false)
+      }
+    }, 0)
+    return () => clearTimeout(id)
   }, [activeTab, search, statusFilter, page])
 
   // Trigger manual resend
@@ -245,8 +248,8 @@ export default function AdminEmailsPage() {
             <div className="relative">
               <select
                 value={statusFilter}
-                onChange={(e: any) => {
-                  setStatusFilter(e.target.value)
+                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+                  setStatusFilter(e.target.value as 'all' | 'sent' | 'failed')
                   setPage(1)
                 }}
                 className="w-full rounded-lg border border-border bg-zinc-50/50 py-2.5 pl-4 pr-10 text-xs font-bold text-zinc-600 outline-none dark:bg-zinc-950/20 dark:text-zinc-400"
@@ -336,7 +339,7 @@ export default function AdminEmailsPage() {
                 <label className="block text-xs font-bold text-zinc-500">Recipient Cohort</label>
                 <select
                   value={broadcast.group}
-                  onChange={(e: any) => setBroadcast({ ...broadcast, group: e.target.value })}
+                  onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setBroadcast({ ...broadcast, group: e.target.value as 'all' | 'admins' | 'users' })}
                   className="w-full rounded-lg border border-border bg-zinc-50/50 p-2.5 text-xs font-bold text-zinc-600 outline-none dark:bg-zinc-950/20 dark:text-zinc-400"
                 >
                   <option value="users">Active Users Only</option>

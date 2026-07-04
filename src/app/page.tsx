@@ -33,7 +33,7 @@ const features = [
   {
     icon: <Calendar className="h-5 w-5 text-rose-600 dark:text-rose-500" />,
     title: 'College & Projects',
-    description: 'Manage assignments, check attendance metrics, track bugs, and organize project repositories.',
+    description: 'Manage assignments, log daily class study focus, track bugs, and organize project repositories.',
   },
   {
     icon: <Brain className="h-5 w-5 text-purple-600 dark:text-purple-500" />,
@@ -102,7 +102,7 @@ export default async function LandingPage() {
           </h1>
 
           <p className="mb-10 max-w-2xl text-[clamp(1rem,2.4vw,1.25rem)] font-medium leading-relaxed text-zinc-600 [text-shadow:_0_1px_0_rgb(255_255_255_/_40%)] dark:text-zinc-400 dark:[text-shadow:none]">
-            Eliminate mental clutter and increase velocity. Track daily habits, manage projects, calculate CGPA, catalog client invoices, and level up your skills with a built-in AI productivity coach.
+            Eliminate mental clutter and increase velocity. Track daily habits, manage projects, log daily class study notes, catalog client invoices, and level up your skills with a built-in AI productivity coach.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center gap-4 justify-center">

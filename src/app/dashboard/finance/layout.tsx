@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
   title: 'Finance',
-  description: 'Track transactions, invoices, revenue, expenses, and secure payment workflows.',
+  description: 'Personal budget: log expenses and earnings, attach bills, and view analytics.',
   alternates: {
     canonical: '/dashboard/finance',
   },

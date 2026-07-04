@@ -30,10 +30,18 @@ async function checkAuth() {
 export async function createTransactionAction(data: any): Promise<FinanceResponse> {
   try {
     const session = await checkAuth()
-    const { type, amount, category, description, date } = data
+    const { type, amount, category, description, date, source, billUrl } = data
 
-    if (!type || !amount || !category) {
-      return { success: false, error: 'Type, Amount, and Category are required.' }
+    if (!type || !amount) {
+      return { success: false, error: 'Type and Amount are required.' }
+    }
+
+    if (type === 'Expense' && !category) {
+      return { success: false, error: 'Category is required for expenses.' }
+    }
+
+    if (type === 'Income' && !source) {
+      return { success: false, error: 'Source is required for income entries.' }
     }
 
     await dbConnect()
@@ -42,9 +50,11 @@ export async function createTransactionAction(data: any): Promise<FinanceRespons
       user: new mongoose.Types.ObjectId(session.user.id),
       type,
       amount: Number(amount),
-      category: category.trim(),
+      category: category ? category.trim() : undefined,
       description,
+      source: source ? source.trim() : undefined,
       date: date ? new Date(date) : new Date(),
+      billUrl: billUrl || undefined,
     })
 
     return {
@@ -55,6 +65,44 @@ export async function createTransactionAction(data: any): Promise<FinanceRespons
   } catch (error: any) {
     console.error('Create Transaction Error:', error)
     return { success: false, error: error.message || 'Failed to log transaction.' }
+  }
+}
+
+export async function updateTransactionAction(data: any): Promise<FinanceResponse> {
+  try {
+    const session = await checkAuth()
+    const { id, type, amount, category, description, date, billUrl, source } = data
+
+    if (!id) return { success: false, error: 'Transaction id is required.' }
+
+    await dbConnect()
+
+    const tx = await Transaction.findOne({ _id: id, user: session.user.id })
+    if (!tx) return { success: false, error: 'Transaction not found.' }
+
+    // Only allow edits on the same calendar day as the transaction date
+    const txDate = new Date(tx.date)
+    const now = new Date()
+    const sameDay = txDate.getFullYear() === now.getFullYear() && txDate.getMonth() === now.getMonth() && txDate.getDate() === now.getDate()
+    if (!sameDay) {
+      return { success: false, error: 'Transactions can only be edited on the same day they were created.' }
+    }
+
+    // Apply updates
+    if (type) tx.type = type
+    if (amount !== undefined) tx.amount = Number(amount)
+    if (category) tx.category = category.trim()
+    if (source !== undefined) tx.source = source
+    if (description !== undefined) tx.description = description
+    if (date) tx.date = new Date(date)
+    if (billUrl !== undefined) tx.billUrl = billUrl
+
+    await tx.save()
+
+    return { success: true, message: 'Transaction updated.', transaction: JSON.parse(JSON.stringify(tx)) }
+  } catch (error: any) {
+    console.error('Update Transaction Error:', error)
+    return { success: false, error: error.message || 'Failed to update transaction.' }
   }
 }
 

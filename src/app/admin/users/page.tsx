@@ -15,6 +15,18 @@ import {
   AlertCircle,
 } from 'lucide-react'
 
+type AdminUser = {
+  id: string
+  name: string
+  email: string
+  level: number
+  xp: number
+  streak: number
+  role: 'user' | 'admin'
+  status: 'active' | 'suspended'
+  createdAt: string
+}
+
 export default function AdminUsersPage() {
   // Queries, filters, sorting, and pagination state
   const [search, setSearch] = useState('')
@@ -25,9 +37,9 @@ export default function AdminUsersPage() {
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
 
   // Data state
-  const [data, setData] = useState<{ users: any[]; total: number; pages: number } | null>(null)
+  const [data, setData] = useState<{ users: AdminUser[]; total: number; pages: number } | null>(null)
   const [loading, setLoading] = useState(true)
-  const [selectedUser, setSelectedUser] = useState<any | null>(null)
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null)
   const [isPending, startTransition] = useTransition()
 
   // Load user directories
@@ -52,7 +64,8 @@ export default function AdminUsersPage() {
   }
 
   useEffect(() => {
-    loadUsers()
+    const id = setTimeout(() => loadUsers(), 0)
+    return () => clearTimeout(id)
   }, [search, role, status, page, sortBy, sortOrder])
 
   // Trigger sorting

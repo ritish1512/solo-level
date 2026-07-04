@@ -1,9 +1,20 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 import GoogleProvider from 'next-auth/providers/google'
+import { CredentialsSignin } from 'next-auth' // <-- IMPORTANT: Import this class
 import bcrypt from 'bcrypt'
 import dbConnect from './mongodb'
 import User from '@/models/User'
+
+// Create a reusable helper to throw compliant errors with custom messages
+class CustomAuthError extends CredentialsSignin {
+  constructor(message: string, code?: string) {
+    super()
+    this.message = message
+    // You can attach custom codes if needed; defaults to "credentials"
+    if (code) this.code = code 
+  }
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   providers: [
@@ -19,23 +30,24 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('Email and password are required')
+          throw new CustomAuthError('Email and password are required')
         }
 
         await dbConnect()
 
         const user = await User.findOne({ email: (credentials.email as string).toLowerCase() })
 
+        // Replaced generic throws with CustomAuthError instances
         if (!user) {
-          throw new Error('No user found with this email')
+          throw new CustomAuthError('No user found with this email')
         }
 
         if (user.status === 'suspended') {
-          throw new Error('This account has been suspended. Please contact support.')
+          throw new CustomAuthError('This account has been suspended. Please contact support.')
         }
 
         if (!user.password) {
-          throw new Error(
+          throw new CustomAuthError(
             'This account uses a different login method. Try signing in with Google.'
           )
         }
@@ -43,11 +55,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const isPasswordValid = await bcrypt.compare(credentials.password as string, user.password)
 
         if (!isPasswordValid) {
-          throw new Error('Incorrect password')
+          throw new CustomAuthError('Incorrect password')
         }
 
         if (!user.emailVerified) {
-          throw new Error('UNVERIFIED: Please verify your email before logging in.')
+          throw new CustomAuthError('UNVERIFIED: Please verify your email before logging in.')
         }
 
         return {

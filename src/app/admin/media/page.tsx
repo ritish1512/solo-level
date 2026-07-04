@@ -22,10 +22,17 @@ import {
   X
 } from 'lucide-react'
 
+type MediaStats = {
+  totalFiles: number
+  totalSizeMb: number
+  taskFilesCount: number
+  projectFilesCount: number
+}
+
 export default function AdminMediaPage() {
   const { toast } = useToast()
   const [search, setSearch] = useState('')
-  const [data, setData] = useState<{ assets: MediaAsset[]; stats: any } | null>(null)
+  const [data, setData] = useState<{ assets: MediaAsset[]; stats: MediaStats } | null>(null)
   const [loading, setLoading] = useState(true)
   const [isPending, startTransition] = useTransition()
 
@@ -46,7 +53,8 @@ export default function AdminMediaPage() {
   }
 
   useEffect(() => {
-    loadMedia()
+    const id = setTimeout(() => loadMedia(), 0)
+    return () => clearTimeout(id)
   }, [search])
 
   // Handle file reference deletion from task/project array

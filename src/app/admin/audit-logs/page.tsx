@@ -61,7 +61,8 @@ export default function AdminAuditLogsPage() {
   }
 
   useEffect(() => {
-    loadLogs()
+    const id = setTimeout(() => loadLogs(), 0)
+    return () => clearTimeout(id)
   }, [search, actionFilter, resultFilter, page])
 
   // Export current logs grid as CSV

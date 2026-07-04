@@ -62,7 +62,8 @@ export default function AdminSettingsPage() {
         setLoading(false)
       }
     }
-    loadSettings()
+    const id = setTimeout(() => loadSettings(), 0)
+    return () => clearTimeout(id)
   }, [])
 
   // Save General settings

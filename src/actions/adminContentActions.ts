@@ -4,7 +4,6 @@ import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import SystemContent from '@/models/SystemContent'
 import { logAdminAction } from '@/services/auditLogService'
-import { sanityClient } from '@/lib/sanity'
 
 async function checkAdminAuth() {
   const session = await auth()
@@ -89,33 +88,3 @@ export async function saveSystemContentAction(
   }
 }
 
-export interface SanityPostSummary {
-  _id: string
-  title: string
-  slug?: string
-  publishedAt?: string
-}
-
-/**
- * Queries content from Sanity Studio. Safe fallbacks are used.
- */
-export async function fetchSanityContent(): Promise<{ posts: SanityPostSummary[]; visionEnabled: boolean }> {
-  await checkAdminAuth()
-
-  try {
-    // Attempt standard GROQ query
-    const posts = await sanityClient.fetch<SanityPostSummary[]>(
-      `*[_type == "post"] { _id, title, "slug": slug.current, publishedAt } | order(publishedAt desc)`
-    )
-    return { posts: posts || [], visionEnabled: true }
-  } catch (err) {
-    console.warn('Sanity connection failed or unconfigured, returning skeletons:', err)
-    return {
-      posts: [
-        { _id: '1', title: 'Level Up Your Habit Building Routine', publishedAt: new Date().toISOString() },
-        { _id: '2', title: 'Why Gamifying Work Increases Daily Completion Rates', publishedAt: new Date().toISOString() },
-      ],
-      visionEnabled: false,
-    }
-  }
-}

@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 
-import React, { useState, useEffect, useTransition } from 'react'
+import React, { useState, useEffect, useTransition, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Play, 
@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { useToast } from '@/components/ui/Toast'
 import { toggleHabitDateAction } from '@/actions/habitActions'
+import { getHabitRecurrenceLabel, isHabitDueForDate } from '@/lib/habitRecurrence'
 import { updateTaskStatusAction } from '@/actions/taskActions'
 import { 
   createTimeBlockAction, 
@@ -49,6 +50,8 @@ const QUOTES = [
   "The only way to get stronger is to keep fighting."
 ]
 
+const INITIAL_QUOTE = QUOTES[Math.floor(Math.random() * QUOTES.length)]
+
 export default function DashboardClient({
   initialUserProfile,
   initialTasks,
@@ -61,7 +64,7 @@ export default function DashboardClient({
   // Real-time states
   const [currentTime, setCurrentTime] = useState('')
   const [currentDate, setCurrentDate] = useState('')
-  const [quote, setQuote] = useState('')
+  const [quote] = useState(INITIAL_QUOTE)
 
   // Data states
   const [userProfile, setUserProfile] = useState(initialUserProfile)
@@ -74,6 +77,9 @@ export default function DashboardClient({
   const [timeLeft, setTimeLeft] = useState(25 * 60)
   const [timerRunning, setTimerRunning] = useState(false)
   const [timerProgress, setTimerProgress] = useState(100)
+  const [customMinutes, setCustomMinutes] = useState('25')
+  const [timerInfo, setTimerInfo] = useState('')
+  const wakeLockSentinelRef = useRef<WakeLockSentinel | null>(null)
 
   // New Time Block form
   const [showAddBlock, setShowAddBlock] = useState(false)
@@ -107,10 +113,8 @@ export default function DashboardClient({
     }
   }
 
-  // 1. Clock and quote picker effect
+  // 1. Clock effect
   useEffect(() => {
-    setQuote(QUOTES[Math.floor(Math.random() * QUOTES.length)])
-    
     const updateClock = () => {
       const d = new Date()
       setCurrentTime(d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))
@@ -121,6 +125,52 @@ export default function DashboardClient({
     return () => clearInterval(timer)
   }, [])
 
+  const releaseWakeLock = async () => {
+    if (!wakeLockSentinelRef.current) return
+
+    try {
+      await wakeLockSentinelRef.current.release()
+    } catch (err) {
+      console.log('Wake lock release error:', err)
+    } finally {
+      wakeLockSentinelRef.current = null
+    }
+  }
+
+  const requestWakeLock = async () => {
+    if (typeof window === 'undefined' || !('wakeLock' in navigator)) return
+
+    try {
+      wakeLockSentinelRef.current = await navigator.wakeLock.request('screen')
+    } catch (err) {
+      console.log('Wake lock request error:', err)
+    }
+  }
+
+  useEffect(() => {
+    if (!timerRunning) {
+      void releaseWakeLock()
+      return
+    }
+
+    void requestWakeLock()
+
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && timerRunning) {
+        await requestWakeLock()
+      } else {
+        await releaseWakeLock()
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      void releaseWakeLock()
+    }
+  }, [timerRunning])
+
   // 2. Pomodoro Timer Countdown Effect
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
@@ -129,31 +179,33 @@ export default function DashboardClient({
       interval = setInterval(() => {
         setTimeLeft((prev) => {
           const next = prev - 1
+
+          if (next <= 0) {
+            setTimerRunning(false)
+            setTimerInfo('')
+            setTimerProgress(100)
+            setTimeLeft(pomodoroMode * 60)
+            playBeep()
+            toast('Focus session completed! Take a break.', 'success')
+
+            startTransition(async () => {
+              try {
+                const userRes = await fetch('/api/user/profile')
+                if (userRes.ok) {
+                  const data = await userRes.json()
+                  setUserProfile(data)
+                }
+              } catch (err) {}
+            })
+
+            return 0
+          }
+
           const totalSeconds = pomodoroMode * 60
           setTimerProgress((next / totalSeconds) * 100)
           return next
         })
       }, 1000)
-    } else if (timeLeft === 0 && timerRunning) {
-      setTimerRunning(false)
-      playBeep()
-      toast('Focus session completed! Take a break.', 'success')
-      
-      // Award User with XP for focus time (+15 XP)
-      startTransition(async () => {
-        try {
-          const res = await fetch('/api/user/profile') // Mock action update via profile refresh or API
-          // In Phase 4, we will log focus hours in DB, for now we dynamically award XP
-          const userRes = await fetch('/api/user/profile')
-          if (userRes.ok) {
-            const data = await userRes.json()
-            setUserProfile(data)
-          }
-        } catch (err) {}
-      })
-      
-      setTimeLeft(pomodoroMode * 60)
-      setTimerProgress(100)
     }
 
     return () => {
@@ -172,10 +224,41 @@ export default function DashboardClient({
     setPomodoroMode(mins)
     setTimeLeft(mins * 60)
     setTimerProgress(100)
+    setTimerInfo('')
+  }
+
+  const handleApplyCustomTimer = () => {
+    const parsedMinutes = Number(customMinutes)
+
+    if (!Number.isFinite(parsedMinutes) || parsedMinutes <= 0) {
+      toast('Please enter a valid focus duration.', 'error')
+      return
+    }
+
+    const safeMinutes = Math.floor(parsedMinutes)
+    setCustomMinutes(String(safeMinutes))
+    changeTimerMode(safeMinutes)
+  }
+
+  const handleToggleTimer = () => {
+    if (timerRunning) {
+      setTimerRunning(false)
+      setTimerInfo('')
+      return
+    }
+
+    setTimerRunning(true)
+    setTimerInfo('Screen wake lock is on while this focus session runs.')
+    toast('Focus session started. Your screen will stay awake until it ends.', 'info')
   }
 
   // 3. Toggle Habit Completion
-  const handleToggleHabit = (habitId: string) => {
+  const handleToggleHabit = (habitId: string, recurrence: any) => {
+    if (!isHabitDueForDate(recurrence, new Date())) {
+      toast('This habit is only available on its scheduled days.', 'info')
+      return
+    }
+
     startTransition(async () => {
       const res = await toggleHabitDateAction(habitId, todayStr)
       if (res.success) {
@@ -273,14 +356,26 @@ export default function DashboardClient({
 
   return (
     <div className="space-y-6">
-      {/* Greetings Header card */}
+      {!userProfile?.emailVerified && (
+        <div className="rounded-2xl border border-amber-300/70 bg-amber-100/80 p-4 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-200 text-amber-900 dark:bg-amber-500/20 dark:text-amber-100">
+              !
+            </span>
+            <div>
+              <p className="font-semibold">Email verification required</p>
+              <p className="text-xs text-amber-700 dark:text-amber-200">Please verify your email to ensure you receive full notifications and reminders.</p>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 rounded-xl border border-border bg-card/40 backdrop-blur-md gap-4">
         <div>
           <h2 className="text-2xl md:text-3xl font-extrabold text-zinc-950 dark:text-white">
             Good Morning, {userProfile?.name?.split(' ')[0] || 'Monarch'}
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium italic">
-            "{quote}"
+            &quot;{quote}&quot;
           </p>
         </div>
 
@@ -401,10 +496,35 @@ export default function DashboardClient({
                 </Button>
               </div>
 
+              <div className="space-y-2 rounded-xl border border-indigo-200/70 bg-indigo-50/80 p-3 text-xs text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+                <label htmlFor="customTimer" className="block font-semibold">Custom timer</label>
+                <div className="flex gap-2">
+                  <Input
+                    id="customTimer"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={customMinutes}
+                    onChange={(e) => setCustomMinutes(e.target.value)}
+                    className="h-9"
+                    placeholder="Minutes"
+                  />
+                  <Button onClick={handleApplyCustomTimer} variant="outline" size="sm" className="h-9 px-3">
+                    Set
+                  </Button>
+                </div>
+              </div>
+
+              {timerInfo ? (
+                <p className="text-xs text-emerald-600 dark:text-emerald-400">{timerInfo}</p>
+              ) : (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">Tip: start a session and your screen will stay awake until it finishes.</p>
+              )}
+
               {/* Buttons controls */}
               <div className="flex gap-2">
                 <Button
-                  onClick={() => setTimerRunning(!timerRunning)}
+                  onClick={handleToggleTimer}
                   variant="primary"
                   className="flex-1 gap-2"
                 >
@@ -429,7 +549,7 @@ export default function DashboardClient({
         <Card className="border-border bg-card/30 md:col-span-2 flex flex-col">
           <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Today's Schedule</CardTitle>
+              <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Today&apos;s Schedule</CardTitle>
               <CardDescription className="text-xs">Time blocked day timeline</CardDescription>
             </div>
             <Button
@@ -593,7 +713,13 @@ export default function DashboardClient({
               </div>
             ) : (
               habits.map((habit) => {
-                const isCompletedToday = habit.completedDates.includes(todayStr)
+                const recurrenceObj = {
+                  type: habit.recurrenceType ?? habit.recurrence?.type,
+                  days: habit.recurrenceDays ?? habit.recurrence?.days,
+                }
+
+                const isDueToday = isHabitDueForDate(recurrenceObj, new Date())
+                const isCompletedToday = isDueToday && habit.completedDates.includes(todayStr)
                 return (
                   <div
                     key={habit._id}
@@ -605,9 +731,9 @@ export default function DashboardClient({
                   >
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => handleToggleHabit(habit._id)}
-                        disabled={isPending}
-                        className={`w-5.5 h-5.5 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
+                        onClick={() => handleToggleHabit(habit._id, recurrenceObj)}
+                        disabled={isPending || !isDueToday}
+                        className={`w-5.5 h-5.5 rounded-full border flex items-center justify-center transition-all ${isDueToday ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} ${
                           isCompletedToday
                             ? 'bg-indigo-500 border-indigo-500 text-white shadow-sm'
                             : 'border-zinc-300 dark:border-zinc-700 hover:border-indigo-500'
@@ -615,9 +741,14 @@ export default function DashboardClient({
                       >
                         {isCompletedToday && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                       </button>
-                      <span className={`text-sm font-medium ${isCompletedToday ? 'text-indigo-600 dark:text-indigo-300 line-through' : 'text-zinc-900 dark:text-zinc-100'}`}>
-                        {habit.name}
-                      </span>
+                      <div>
+                        <span className={`text-sm font-medium ${isCompletedToday ? 'text-indigo-600 dark:text-indigo-300 line-through' : 'text-zinc-900 dark:text-zinc-100'}`}>
+                          {habit.name}
+                        </span>
+                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
+                          {getHabitRecurrenceLabel(recurrenceObj)}
+                        </p>
+                      </div>
                     </div>
 
                     <div className="flex items-center gap-2 text-xs font-bold text-zinc-400 dark:text-zinc-500">

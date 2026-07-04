@@ -103,6 +103,62 @@ export async function updateSubjectAttendanceAction(id: string, attended: number
   }
 }
 
+export async function logSubjectAttendanceAction(id: string, present: boolean, note?: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    if (!id) {
+      return { success: false, error: 'Subject ID is required.' }
+    }
+
+    const subject = await Subject.findOne({ _id: id, user: session.user.id })
+    if (!subject) {
+      return { success: false, error: 'Subject not found.' }
+    }
+
+    const todayKey = new Date().toISOString().slice(0, 10)
+    subject.classNotes = subject.classNotes || []
+
+    const existingNote = subject.classNotes.find(
+      (noteEntry: any) => new Date(noteEntry.date).toISOString().slice(0, 10) === todayKey
+    )
+
+    if (existingNote) {
+      if (existingNote.attended !== present) {
+        subject.attendedClasses += present ? 1 : -1
+        if (subject.attendedClasses < 0) {
+          subject.attendedClasses = 0
+        }
+      }
+      existingNote.attended = present
+      existingNote.note = note?.trim() || ''
+      existingNote.date = new Date()
+    } else {
+      subject.totalClasses += 1
+      if (present) {
+        subject.attendedClasses += 1
+      }
+      subject.classNotes.push({
+        date: new Date(),
+        attended: present,
+        note: note?.trim() || '',
+      })
+    }
+
+    await subject.save()
+
+    return {
+      success: true,
+      message: 'Class attendance logged.',
+      subject: JSON.parse(JSON.stringify(subject)),
+    }
+  } catch (error: any) {
+    console.error('Log Attendance Error:', error)
+    return { success: false, error: error.message || 'Failed to save attendance note.' }
+  }
+}
+
 export async function deleteSubjectAction(id: string): Promise<CollegeResponse> {
   try {
     const session = await checkAuth()
