@@ -41,7 +41,7 @@ export default async function DashboardLayout({
         <div className="pointer-events-none absolute right-0 top-0 h-[min(28rem,70vw)] w-[min(28rem,70vw)] rounded-full bg-indigo-500/5 blur-[120px]" />
         
         <main id="main-content" className="mx-auto w-full max-w-7xl flex-1 overflow-y-auto px-4 pb-6 pt-24 sm:px-6 md:px-8 md:py-6">
-          <div className="hidden md:sticky top-0 z-20 mb-6 border-b border-border/60 bg-background/95 backdrop-blur-md py-3">
+          <div className="hidden md:block sticky top-0 z-20 mb-6 border-b border-border/60 bg-background/95 backdrop-blur-md py-3">
             <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-0 sm:px-0">
               <div className="text-sm text-zinc-500">
                 Your central dashboard for work, college, productivity, and finance.
