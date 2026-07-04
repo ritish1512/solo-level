@@ -812,7 +812,7 @@ export default function DashboardClient({
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 rounded-xl border border-border bg-card/40 backdrop-blur-md gap-4">
         <div>
           <h2 className="text-2xl md:text-3xl font-extrabold text-zinc-950 dark:text-white">
-            Good Morning, {userProfile?.name?.split(' ')[0] || 'Monarch'}
+            Good to see you, {userProfile?.name?.split(' ')[0] || 'Monarch'}
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium italic">
             &quot;{quote}&quot;
