@@ -142,3 +142,19 @@ textarea {
     transform: translateY(0);
   }
 }
+
+/* Loader shimmer used by the global loading UI */
+.loader-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 900ms linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
