@@ -2,7 +2,7 @@ import type { MetadataRoute } from 'next'
 
 const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || 'https://sololevelingguider.vercel.app').replace(/\/$/, '')
 
-const publicRoutes = ['', '/login', '/register', '/forgot-password']
+const publicRoutes = ['', '/login', '/register', '/forgot-password',"/dashboard"]
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date()

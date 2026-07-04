@@ -80,12 +80,12 @@ export async function updateTransactionAction(data: any): Promise<FinanceRespons
     const tx = await Transaction.findOne({ _id: id, user: session.user.id })
     if (!tx) return { success: false, error: 'Transaction not found.' }
 
-    // Only allow edits on the same calendar day as the transaction date
-    const txDate = new Date(tx.date)
+    // Only allow edits within 24 hours of creation
+    const createdAt = tx.createdAt ? new Date(tx.createdAt) : new Date(tx.date)
     const now = new Date()
-    const sameDay = txDate.getFullYear() === now.getFullYear() && txDate.getMonth() === now.getMonth() && txDate.getDate() === now.getDate()
-    if (!sameDay) {
-      return { success: false, error: 'Transactions can only be edited on the same day they were created.' }
+    const msIn24h = 24 * 60 * 60 * 1000
+    if (now.getTime() - createdAt.getTime() > msIn24h) {
+      return { success: false, error: 'Transactions can only be edited within 24 hours of creation.' }
     }
 
     // Apply updates
@@ -126,6 +126,16 @@ export async function deleteTransactionAction(id: string): Promise<FinanceRespon
   try {
     const session = await checkAuth()
     await dbConnect()
+
+    const tx = await Transaction.findOne({ _id: id, user: session.user.id })
+    if (!tx) return { success: false, error: 'Transaction not found.' }
+
+    const createdAt = tx.createdAt ? new Date(tx.createdAt) : new Date(tx.date)
+    const now = new Date()
+    const msIn24h = 24 * 60 * 60 * 1000
+    if (now.getTime() - createdAt.getTime() > msIn24h) {
+      return { success: false, error: 'Transactions can only be deleted within 24 hours of creation.' }
+    }
 
     await Transaction.deleteOne({ _id: id, user: session.user.id })
 
