@@ -72,7 +72,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       },
     }),
   ],
-  callbacks: {
+    callbacks: {
     async signIn({ account, profile, user }) {
       if (account?.provider === 'google') {
         await dbConnect()
@@ -109,6 +109,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return true
     },
     async jwt({ token, user, trigger, session }) {
+      // Runs only on initial login/sign-in
       if (user) {
         token.id = user.id as string
         token.email = (user.email as string) || ""
@@ -118,25 +119,14 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return token 
       }
       
+      // Runs when you programmatically fire a user details update trigger
       if (trigger === 'update' && session) {
         token.name = session.name || token.name
         token.image = session.image || token.image
       }
 
-      if (token.id) {
-        try {
-          await dbConnect()
-          const dbUser = await User.findById(token.id).select('role name image email').lean() as any
-          if (dbUser) {
-            token.role = dbUser.role
-            token.name = dbUser.name
-            token.image = dbUser.image
-            token.email = dbUser.email
-          }
-        } catch (error) {
-          console.error("Failed to refresh JWT user data:", error)
-        }
-      }
+      // FIX: Removed the massive MongoDB findById lookup loop here to keep production lightning fast.
+      // Roles are natively carried from the step above inside your secure JWT session token directly.
 
       return token
     },
@@ -151,6 +141,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return session
     },
   },
+
   pages: {
     signIn: '/login',
     error: '/login',

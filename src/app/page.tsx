@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { auth } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
 import { ThemeToggleButton } from '@/components/ThemeToggleButton'
+import InstallButton from '@/components/InstallButton'
 import { ArrowRight, Shield, Award, Calendar, Zap, LayoutDashboard, Brain } from 'lucide-react'
 
 export const metadata: Metadata = {
@@ -116,6 +117,7 @@ export default async function LandingPage() {
                 Access Dashboard
               </Button>
             </Link>
+            <InstallButton />
           </div>
         </div>
 

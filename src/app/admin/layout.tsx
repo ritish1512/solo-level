@@ -22,11 +22,11 @@ export default async function AdminLayout({
 
   // Server-side redirect safety (backup to the route middleware)
   if (!session) {
-    redirect('/login?error=Please%20log%20in%20to%2520access%20the%20admin%20panel.')
+    redirect('/login?error=Please%20log%20in%20to%2520access%20the%20admin%20panel.&callbackUrl=%2Fadmin')
   }
 
   if (session.user.role !== 'admin') {
-    redirect('/login?error=forbidden')
+    redirect('/login?error=forbidden&callbackUrl=%2Fadmin')
   }
 
   return (

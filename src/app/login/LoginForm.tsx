@@ -147,6 +147,7 @@ export default function LoginForm() {
                   value={formData.email}
                   onChange={handleChange}
                   disabled={isPending}
+                  suppressHydrationWarning
                   className={errors.email ? 'border-rose-500 focus-visible:ring-rose-500' : ''}
                 />
                 {errors.email && <p className="text-xs text-rose-500 font-medium">{errors.email}</p>}
@@ -170,6 +171,7 @@ export default function LoginForm() {
                   value={formData.password}
                   onChange={handleChange}
                   disabled={isPending}
+                  suppressHydrationWarning
                   className={errors.password ? 'border-rose-500 focus-visible:ring-rose-500' : ''}
                 />
                 {errors.password && <p className="text-xs text-rose-500 font-medium">{errors.password}</p>}
@@ -196,6 +198,7 @@ export default function LoginForm() {
               variant="outline"
               type="button"
               className="w-full gap-2 border border-border"
+              suppressHydrationWarning
               disabled={isPending}
             >
               <svg className="w-4 h-4 mr-1" viewBox="0 0 24 24" fill="currentColor">

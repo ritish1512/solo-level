@@ -64,6 +64,35 @@ export default function DashboardClient({
   const [currentDate, setCurrentDate] = useState('')
   const [quote, setQuote] = useState('')
 
+  useEffect(() => {
+    const updateClock = () => {
+      const now = new Date()
+      setCurrentTime(
+        now.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        })
+      )
+      setCurrentDate(
+        now.toLocaleDateString([], {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+        })
+      )
+    }
+
+    updateClock()
+    const intervalId = window.setInterval(updateClock, 1000)
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  useEffect(() => {
+    const randomQuote = QUOTES[Math.floor(Math.random() * QUOTES.length)]
+    setQuote(randomQuote)
+  }, [])
+
   // Data states
   const [userProfile, setUserProfile] = useState(initialUserProfile)
   const [tasks, setTasks] = useState(initialTasks)

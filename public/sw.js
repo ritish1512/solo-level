@@ -1,11 +1,14 @@
 const CACHE_NAME = 'solo-leveling-cache-v1';
+
+// Caching only real, stable static assets on install (No dynamic code)
 const STATIC_ASSETS = [
   '/',
-  '/manifest.webmanifest',
   '/favicon.ico',
+  '/icon-192x192.png',
+  '/icon-512x512.png'
 ];
 
-// Install SW and cache app shell assets
+// Install SW and cache immutable app shell assets
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
@@ -39,44 +42,24 @@ self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Skip POST, PUT, DELETE, and external API requests (e.g. Google auth)
+  // 1. STRICT SAFETY NET: Bypass absolutely everything except same-origin GET requests
   if (request.method !== 'GET' || url.origin !== self.location.origin) {
     return;
   }
 
-  // Skip Next.js hot reload and dev server assets
-  if (url.pathname.includes('/_next/webpack-hmr') || url.pathname.includes('webpack')) {
+  // 2. CRITICAL DEVELOPMENT AND COMPILING BYPASS
+  // Forces browser to fetch hot-reloads and dev chunks raw from network
+  if (
+    url.pathname.includes('/_next/webpack-hmr') || 
+    url.pathname.includes('webpack') ||
+    url.pathname.includes('hot-update') ||
+    url.pathname.startsWith('/_next/data')
+  ) {
+    event.respondWith(fetch(request));
     return;
   }
 
-  // Caching strategy for main app pages (App Shell/Dashboard views) -> Network First, fallback to cache
-  const isAppPage = url.pathname.startsWith('/dashboard') || url.pathname === '/';
-  if (isAppPage) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          // Clone the response and save it to the cache
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
-          return response;
-        })
-        .catch(() => {
-          // If network fails, serve from cache
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) {
-              return cachedResponse;
-            }
-            // Fallback if cache is also empty (e.g. never loaded this page online)
-            return caches.match('/');
-          });
-        })
-    );
-    return;
-  }
-
-  // Caching strategy for static files (Next.js bundles, CSS, JS, Fonts, Images) -> Cache First, fallback to network
+  // 3. STATIC ASSETS HANDLING (Images, Fonts, CSS, JS Bundles)
   const isStaticAsset =
     url.pathname.startsWith('/_next/static') ||
     url.pathname.startsWith('/fonts') ||
@@ -88,31 +71,44 @@ self.addEventListener('fetch', (event) => {
     url.pathname.endsWith('.woff2');
 
   if (isStaticAsset) {
+    // For local development, change this to Network First to stop caching loops.
+    // This network-first strategy ensures dev updates show instantly while protecting production stability.
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-
-        return fetch(request).then((response) => {
-          if (!response || response.status !== 200) {
-            return response;
-          }
+      fetch(request)
+        .then((response) => {
+          if (!response || response.status !== 200) return response;
           const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(request, responseClone);
-          });
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
           return response;
-        });
-      })
+        })
+        .catch(() => caches.match(request)) // Fallback to cache ONLY if internet drops
     );
     return;
   }
 
-  // Default network-first strategy for everything else
+  // 4. MAIN APP PAGES / ROUTING VIEWS (Network First, fallback to cache)
+  const isAppPage = url.pathname.startsWith('/dashboard') || url.pathname === '/';
+  if (isAppPage) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (!response || response.status !== 200) return response;
+          const responseClone = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
+          return response;
+        })
+        .catch(() => {
+          return caches.match(request).then((cachedResponse) => {
+            if (cachedResponse) return cachedResponse;
+            return caches.match('/'); // Return app core fallback layout if specific page missing
+          });
+        })
+    );
+    return;
+  }
+
+  // 5. DEFAULT BACKUP STRATEGY
   event.respondWith(
-    fetch(request).catch(() => {
-      return caches.match(request);
-    })
+    fetch(request).catch(() => caches.match(request))
   );
 });

@@ -10,6 +10,10 @@ export async function proxy(request: NextRequest) {
     const token = await getToken({
       req: request,
       secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+      // FIX: Tell Next-Auth exactly where to look for the cookie string
+      cookieName: process.env.NODE_ENV === 'production' 
+        ? '__Secure-authjs.session-token' 
+        : 'authjs.session-token'
     })
 
     // If no token exists, redirect to login (or return 401 for API)
