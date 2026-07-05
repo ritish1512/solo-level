@@ -27,7 +27,6 @@ export function useTimeSensitiveNotifications() {
           headers: {
             'Content-Type': 'application/json',
           },
-          
         })
 
         if (response.ok) {

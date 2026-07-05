@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'Solo Leveling Productivity System',
     short_name: 'Solo Leveling',
     description: 'A productivity dashboard for tasks, habits, projects, notes, college work, and finances.',
-    start_url: '/',
+    start_url: '/dashboard',
     scope: '/',
     display: 'standalone',
     background_color: '#09090b',

@@ -38,7 +38,7 @@ export async function GET(request: Request) {
           const hoursUntil = Math.ceil((deadlineTime - currentTime) / (1000 * 60 * 60))
           
           // Send email
-          await sendTaskDeadlineReminder(session.user.email, session.user.name, task.title, task.deadline, hoursUntil)
+          await sendTaskDeadlineReminder(session.user.email || '', session.user.name || '', task.title, task.deadline, hoursUntil)
           
           // Mark as sent
           task.reminderSent = true
@@ -46,7 +46,7 @@ export async function GET(request: Request) {
 
           // Add to notifications
           notifications.push({
-            id: task._id,
+            id: task._id.toString(),
             type: 'task',
             title: task.title,
             time: new Date(task.deadline).toLocaleString(),
@@ -79,11 +79,11 @@ export async function GET(request: Request) {
 
         // Send reminder 15 minutes before start time (within 1 minute window)
         if (minutesUntilStart > 14 && minutesUntilStart <= 15) {
-          await sendTimeBlockNotification(session.user.email, session.user.name, timeBlock.title, timeBlock.startTime, timeBlock.date)
+          await sendTimeBlockNotification(session.user.email || '', session.user.name || '', timeBlock.title, timeBlock.startTime, timeBlock.date)
 
           // Add to notifications
           notifications.push({
-            id: timeBlock._id,
+            id: timeBlock._id.toString(),
             type: 'timeblock',
             title: timeBlock.title,
             time: timeBlock.startTime,

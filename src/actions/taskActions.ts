@@ -36,7 +36,6 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       category,
       priority,
       difficulty,
-      energyRequired,
       deadline,
       estimatedTime,
       tags,
@@ -80,7 +79,6 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       category,
       priority,
       difficulty,
-      energyRequired,
       status: 'Todo',
       deadline: parsedDeadline,
       estimatedTime: estimatedTime ? Number(estimatedTime) : undefined,
@@ -194,7 +192,6 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
       category,
       priority,
       difficulty,
-      energyRequired,
       deadline,
       estimatedTime,
       tags,
@@ -212,7 +209,6 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
     task.category = category || task.category
     task.priority = priority || task.priority
     task.difficulty = difficulty || task.difficulty
-    task.energyRequired = energyRequired || task.energyRequired
     task.notes = notes !== undefined ? notes : task.notes
     task.tags = tags || task.tags
     task.estimatedTime = estimatedTime !== undefined ? Number(estimatedTime) : task.estimatedTime

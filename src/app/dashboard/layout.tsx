@@ -9,8 +9,8 @@ const Sidebar = dynamic(() => import('@/components/dashboard/Sidebar'), {
   ssr: true,
   loading: () => <div className="w-64 border-r border-border bg-card animate-pulse" />
 })
-const NotificationBell = dynamic(() => import('@/components/dashboard/NotificationBell'), {
-  ssr: false,
+const NotificationBellWrapper = dynamic(() => import('@/components/dashboard/NotificationBellWrapper'), {
+  ssr: true,
   loading: () => <div className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
 })
 
@@ -54,7 +54,7 @@ export default async function DashboardLayout({
                 Your central dashboard for work, college, productivity, and finance.
               </div>
               <div className="flex items-center gap-2">
-                <NotificationBell />
+                <NotificationBellWrapper />
               </div>
             </div>
           </div>

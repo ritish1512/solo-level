@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
     ],
   },
   // Performance optimizations
-  swcMinify: true,
   compress: true,
   // Enable experimental features for better performance
   experimental: {

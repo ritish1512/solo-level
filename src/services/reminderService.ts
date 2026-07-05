@@ -597,7 +597,7 @@ export async function createHabitReminders(
 ): Promise<void> {
   try {
     await dbConnect()
-    const { Habit } = await import('@/models/Habit')
+    const { default: Habit } = await import('@/models/Habit')
     const habit = await Habit.findById(habitId)
     if (!habit) return
 
