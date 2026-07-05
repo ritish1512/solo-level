@@ -4,6 +4,7 @@ import mongoose from 'mongoose'
 import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import ContentIdea, { ContentPlatform, ContentStatus } from '@/models/ContentIdea'
+import { createContentReminders, deleteContentReminders, generateAutoReminders } from '@/services/reminderService'
 
 type ContentIdeaPayload = {
   title?: string
@@ -13,6 +14,7 @@ type ContentIdeaPayload = {
   scheduledDate?: string
   notes?: string
   mediaUrl?: string
+  reminderConfigs?: any[]
 }
 
 export type ContentIdeaResponse = {
@@ -45,20 +47,40 @@ export async function createContentIdeaAction(data: ContentIdeaPayload): Promise
       return { success: false, error: 'Content title is required.' }
     }
 
+    const scheduledDate = parseScheduledDate(data.scheduledDate)
     const idea = await ContentIdea.create({
       user: new mongoose.Types.ObjectId(session.user.id),
       title: data.title.trim(),
       platform: data.platform || 'YouTube',
       status: data.status || 'Idea',
       script: data.script,
-      scheduledDate: parseScheduledDate(data.scheduledDate),
+      scheduledDate,
       notes: data.notes,
       mediaUrl: data.mediaUrl?.trim() || undefined,
+      reminderConfigs: data.reminderConfigs || [],
     })
+
+    // Generate automatic reminders if scheduled date is provided
+    if (scheduledDate) {
+      const autoReminders = generateAutoReminders(scheduledDate, 'assignment') // Use 'assignment' type for content
+      if (autoReminders.length > 0) {
+        await createContentReminders(idea._id.toString(), autoReminders)
+      }
+    }
+
+    // Create reminder documents if custom reminder configs provided
+    if (idea.scheduledDate && data.reminderConfigs && data.reminderConfigs.length > 0) {
+      // Convert reminderTime strings to Date objects
+      const configsForService = data.reminderConfigs.map((config: any) => ({
+        ...config,
+        reminderTime: new Date(config.reminderTime),
+      }))
+      await createContentReminders(idea._id.toString(), configsForService)
+    }
 
     return {
       success: true,
-      message: 'Content idea created.',
+      message: 'Content idea created! You\'ll receive automatic reminders 1 week before, 1 day before, and on the scheduled date.',
       idea: JSON.parse(JSON.stringify(idea)),
     }
   } catch (error) {
@@ -85,12 +107,26 @@ export async function updateContentIdeaAction(id: string, data: ContentIdeaPaylo
     if (data.notes !== undefined) idea.notes = data.notes
     if (data.mediaUrl !== undefined) idea.mediaUrl = data.mediaUrl.trim() || undefined
     if (data.scheduledDate !== undefined) idea.scheduledDate = parseScheduledDate(data.scheduledDate)
+    if (data.reminderConfigs !== undefined) idea.reminderConfigs = data.reminderConfigs
 
     if (!idea.title) {
       return { success: false, error: 'Content title is required.' }
     }
 
     await idea.save()
+
+    // Update reminders if scheduled date or reminder configs changed
+    if (data.scheduledDate !== undefined || data.reminderConfigs !== undefined) {
+      await deleteContentReminders(id)
+      if (idea.scheduledDate && idea.reminderConfigs && idea.reminderConfigs.length > 0) {
+        // Convert reminderTime strings to Date objects
+        const configsForService = idea.reminderConfigs.map((config: any) => ({
+          ...config,
+          reminderTime: new Date(config.reminderTime),
+        }))
+        await createContentReminders(id, configsForService)
+      }
+    }
 
     return {
       success: true,
@@ -108,6 +144,9 @@ export async function deleteContentIdeaAction(id: string): Promise<ContentIdeaRe
   try {
     const session = await checkAuth()
     await dbConnect()
+
+    // Delete associated reminders
+    await deleteContentReminders(id)
 
     await ContentIdea.deleteOne({ _id: id, user: session.user.id })
 

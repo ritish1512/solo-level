@@ -16,13 +16,15 @@ import {
   PlusCircle,
   Check,
   Edit3,
-  Save
+  Save,
+  Bell
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
+import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
 import { 
   createProjectAction,
   updateProjectAction,
@@ -31,7 +33,7 @@ import {
   updateBugAction,
   deleteBugAction
 } from '@/actions/projectActions'
-import { createTaskAction, updateTaskStatusAction } from '@/actions/taskActions'
+import { createTaskAction, updateTaskStatusAction, deleteTaskAction, updateTaskAction } from '@/actions/taskActions'
 
 interface ProjectsClientProps {
   initialProjects: any[]
@@ -59,13 +61,16 @@ export default function ProjectsClient({
   const [showAddBug, setShowAddBug] = useState(false)
   const [showAddTask, setShowAddTask] = useState(false)
   const [isEditingProject, setIsEditingProject] = useState(false)
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null)
+  const [showReminderModal, setShowReminderModal] = useState(false)
+  const [selectedProjectForReminder, setSelectedProjectForReminder] = useState<any>(null)
 
   // Form States
   const [projectForm, setProjectForm] = useState({
-    title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] as string[]
+    title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] as string[], deadline: ''
   })
   const [editProjectForm, setEditProjectForm] = useState({
-    title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] as string[], notes: ''
+    title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] as string[], notes: '', deadline: ''
   })
 
   // Refs
@@ -73,6 +78,7 @@ export default function ProjectsClient({
   const createScreenshotInputRef = React.useRef<HTMLInputElement>(null)
   const [bugForm, setBugForm] = useState({ title: '', description: '', severity: 'Medium' })
   const [taskForm, setTaskForm] = useState({ title: '', deadline: new Date().toISOString().split('T')[0], priority: 'Medium' })
+  const [editTaskForm, setEditTaskForm] = useState({ title: '', deadline: '', priority: 'Medium' })
 
   // Uploader State
   const [uploading, setUploading] = useState(false)
@@ -132,7 +138,7 @@ export default function ProjectsClient({
         toast('Project created successfully!', 'success')
         setProjects((prev) => [res.project, ...prev])
         setSelectedProject(res.project)
-        setProjectForm({ title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] })
+        setProjectForm({ title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] as string[], deadline: '' })
         setShowAddProject(false)
       } else {
         toast(res.error || 'Failed to create project', 'error')
@@ -182,6 +188,7 @@ export default function ProjectsClient({
         techStack: selectedProject.techStack?.join(', ') || '',
         screenshots: selectedProject.screenshots || [],
         notes: selectedProject.notes || '',
+        deadline: selectedProject.deadline ? new Date(selectedProject.deadline).toISOString().split('T')[0] : '',
       })
       setIsEditingProject(true)
     }
@@ -190,7 +197,7 @@ export default function ProjectsClient({
   const handleCancelEdit = () => {
     setIsEditingProject(false)
     setEditProjectForm({
-      title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [], notes: ''
+      title: '', description: '', githubLink: '', demoLink: '', deploymentLink: '', techStack: '', screenshots: [] as string[], notes: '', deadline: ''
     })
   }
 
@@ -296,6 +303,56 @@ export default function ProjectsClient({
     })
   }
 
+  const handleDeleteProjectTask = (taskId: string) => {
+    startTransition(async () => {
+      const res = await deleteTaskAction(taskId)
+      if (res.success) {
+        setTasks((prev) => prev.filter((t) => t._id !== taskId))
+        toast('Project task deleted.', 'info')
+      } else {
+        toast(res.error || 'Failed to delete task', 'error')
+      }
+    })
+  }
+
+  const handleStartEditTask = (task: any) => {
+    setEditTaskForm({
+      title: task.title,
+      deadline: task.deadline.split('T')[0],
+      priority: task.priority,
+    })
+    setEditingTaskId(task._id)
+  }
+
+  const handleSaveEditTask = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingTaskId) return
+
+    startTransition(async () => {
+      const res = await updateTaskAction(editingTaskId, {
+        title: editTaskForm.title,
+        deadline: editTaskForm.deadline,
+        priority: editTaskForm.priority,
+      })
+
+      if (res.success) {
+        toast('Project task updated!', 'success')
+        setTasks((prev) =>
+          prev.map((t) => (t._id === editingTaskId ? res.task : t))
+        )
+        setEditingTaskId(null)
+        setEditTaskForm({ title: '', deadline: '', priority: 'Medium' })
+      } else {
+        toast(res.error || 'Failed to update task', 'error')
+      }
+    })
+  }
+
+  const handleCancelEditTask = () => {
+    setEditingTaskId(null)
+    setEditTaskForm({ title: '', deadline: '', priority: 'Medium' })
+  }
+
   // Filter Tasks and Bugs for Selected Project
   const projectTasks = selectedProject
     ? tasks.filter((t) => t.project === selectedProject._id)
@@ -376,6 +433,17 @@ export default function ProjectsClient({
                             <ExternalLink className="w-4 h-4" />
                           </a>
                         )}
+                        <Button
+                          onClick={() => {
+                            setSelectedProjectForReminder(selectedProject)
+                            setShowReminderModal(true)
+                          }}
+                          variant="ghost"
+                          size="sm"
+                          className="text-indigo-500 hover:bg-indigo-500/10 cursor-pointer h-9.5"
+                        >
+                          <Bell className="w-4 h-4" />
+                        </Button>
                         <Button onClick={handleStartEdit} variant="ghost" size="sm" className="text-indigo-500 hover:bg-indigo-500/10 cursor-pointer h-9.5 gap-1">
                           <Edit3 className="w-4 h-4" />
                         </Button>
@@ -504,6 +572,32 @@ export default function ProjectsClient({
                         />
                       </div>
 
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1">
+                          <Label htmlFor="edit-deadline">Project Deadline</Label>
+                          <Input
+                            id="edit-deadline"
+                            type="date"
+                            value={editProjectForm.deadline || ''}
+                            onChange={(e) => setEditProjectForm({ ...editProjectForm, deadline: e.target.value })}
+                          />
+                        </div>
+                        {editProjectForm.deadline && (
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setSelectedProjectForReminder(selectedProject)
+                              setShowReminderModal(true)
+                            }}
+                            variant="outline"
+                            size="sm"
+                            className="mt-5 h-11 w-11 flex items-center justify-center text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                          >
+                            <Bell className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+
                       <div className="space-y-1.5">
                         <Label htmlFor="edit-notes">Notes</Label>
                         <textarea
@@ -594,7 +688,7 @@ export default function ProjectsClient({
                       <p className="text-xs text-zinc-500 italic py-6 text-center">No tasks logged for this project.</p>
                     ) : (
                       projectTasks.map((t) => (
-                        <div key={t._id} className="p-3 rounded-lg border border-border bg-card flex items-center justify-between gap-3">
+                        <div key={t._id} className="p-3 rounded-lg border border-border bg-card flex items-center justify-between gap-3 group">
                           <div className="flex items-center gap-3">
                             <button
                               onClick={() => handleToggleTaskStatus(t._id, t.status === 'Completed')}
@@ -610,11 +704,25 @@ export default function ProjectsClient({
                               {t.title}
                             </span>
                           </div>
-                          <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
-                            t.priority === 'High' ? 'bg-rose-500/10 text-rose-500' : t.priority === 'Medium' ? 'bg-amber-500/10 text-amber-500' : 'bg-zinc-500/10 text-zinc-500'
-                          }`}>
-                            {t.priority}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded ${
+                              t.priority === 'High' ? 'bg-rose-500/10 text-rose-500' : t.priority === 'Medium' ? 'bg-amber-500/10 text-amber-500' : 'bg-zinc-500/10 text-zinc-500'
+                            }`}>
+                              {t.priority}
+                            </span>
+                            <button 
+                              onClick={() => handleStartEditTask(t)} 
+                              className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-indigo-500 transition-opacity p-0.5 rounded hover:bg-indigo-500/10"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteProjectTask(t._id)} 
+                              className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-rose-500 transition-opacity p-0.5 rounded hover:bg-rose-500/10"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))
                     )}
@@ -741,6 +849,27 @@ export default function ProjectsClient({
                   <Input id="proTech" type="text" placeholder="Next.js, TypeScript, Tailwind, MongoDB" value={projectForm.techStack} onChange={(e) => setProjectForm((prev) => ({ ...prev, techStack: e.target.value }))} />
                 </div>
 
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <Label htmlFor="proDeadline">Project Deadline</Label>
+                    <Input id="proDeadline" type="date" value={projectForm.deadline || ''} onChange={(e) => setProjectForm((prev) => ({ ...prev, deadline: e.target.value }))} />
+                  </div>
+                  {projectForm.deadline && (
+                    <Button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectForReminder({ ...projectForm, _id: 'temp' } as any)
+                        setShowReminderModal(true)
+                      }}
+                      variant="outline"
+                      size="sm"
+                      className="mt-5 h-11 w-11 flex items-center justify-center text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                    >
+                      <Bell className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+
                 {/* Screenshot media uploader */}
                 <div className="space-y-1">
                   <Label>Screenshots / Visual Assets</Label>
@@ -837,6 +966,107 @@ export default function ProjectsClient({
                 </div>
                 <Button type="submit" variant="primary" className="w-full" isLoading={isPending}>Log Bug</Button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 4. Edit Task Modal */}
+      <AnimatePresence>
+        {editingTaskId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-sm bg-card border border-border rounded-xl p-6 relative">
+              <button onClick={handleCancelEditTask} className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-200"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold mb-4">Edit Project Task</h3>
+              <form onSubmit={handleSaveEditTask} className="space-y-4">
+                <div className="space-y-1">
+                  <Label htmlFor="editTaskTitle">Task Title</Label>
+                  <Input id="editTaskTitle" type="text" placeholder="e.g. Implement Oauth" value={editTaskForm.title} onChange={(e) => setEditTaskForm((prev) => ({ ...prev, title: e.target.value }))} required />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="editTaskDeadline">Deadline</Label>
+                    <Input id="editTaskDeadline" type="date" value={editTaskForm.deadline} onChange={(e) => setEditTaskForm((prev) => ({ ...prev, deadline: e.target.value }))} required />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="editTaskPri">Priority</Label>
+                    <select id="editTaskPri" value={editTaskForm.priority} onChange={(e) => setEditTaskForm((prev) => ({ ...prev, priority: e.target.value }))} className="flex h-10 w-full rounded-md border border-border bg-background/80 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="button" variant="outline" className="flex-1" onClick={handleCancelEditTask}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" variant="primary" className="flex-1" isLoading={isPending}>Save Changes</Button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 5. Project Reminder Modal */}
+      <AnimatePresence>
+        {showReminderModal && selectedProjectForReminder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-lg bg-card border border-border rounded-xl p-6 relative max-h-[90vh] overflow-y-auto">
+              <button onClick={() => setShowReminderModal(false)} className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-200"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold mb-2">Set Reminders for {selectedProjectForReminder.title}</h3>
+              <p className="text-sm text-zinc-500 mb-6">Configure custom reminders for this project</p>
+
+              <ReminderConfigPanel
+                configs={selectedProjectForReminder.reminderConfigs || []}
+                onConfigsChange={(configs) => {
+                  setSelectedProjectForReminder((prev: any) => ({ ...prev, reminderConfigs: configs }))
+                }}
+                title="Project Reminders"
+                description="Set reminder times for this project"
+              />
+
+              <div className="mt-6 flex gap-3">
+                <Button
+                  onClick={async () => {
+                    startTransition(async () => {
+                      const res = await updateProjectAction(selectedProjectForReminder._id, {
+                        ...selectedProjectForReminder,
+                        reminderConfigs: selectedProjectForReminder.reminderConfigs
+                      })
+                      if (res.success) {
+                        toast('Reminders updated successfully!', 'success')
+                        setProjects((prev) =>
+                          prev.map((p) =>
+                            p._id === selectedProjectForReminder._id
+                              ? { ...p, reminderConfigs: selectedProjectForReminder.reminderConfigs }
+                              : p
+                          )
+                        )
+                        if (selectedProject && selectedProject._id === selectedProjectForReminder._id) {
+                          setSelectedProject({ ...selectedProject, reminderConfigs: selectedProjectForReminder.reminderConfigs })
+                        }
+                        setShowReminderModal(false)
+                      } else {
+                        toast(res.error || 'Failed to update reminders', 'error')
+                      }
+                    })
+                  }}
+                  variant="primary"
+                  className="flex-1"
+                  isLoading={isPending}
+                >
+                  Save Reminders
+                </Button>
+                <Button
+                  onClick={() => setShowReminderModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
             </motion.div>
           </div>
         )}

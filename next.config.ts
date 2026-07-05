@@ -7,6 +7,17 @@ const nextConfig: NextConfig = {
       { protocol: 'http', hostname: 'localhost' },
     ],
   },
+  // Performance optimizations
+  swcMinify: true,
+  compress: true,
+  // Enable experimental features for better performance
+  experimental: {
+    optimizePackageImports: ['lucide-react', 'framer-motion'],
+  },
+  // Output optimization
+  output: 'standalone',
+  // Enable React strict mode for better development experience
+  reactStrictMode: true,
 };
 
 export default nextConfig;

@@ -2,9 +2,18 @@ import mongoose, { Schema, Document, Model } from 'mongoose'
 
 export interface IReminderConfig {
   enabled: boolean
-  timeBefore: number // minutes before deadline
+  reminderTime: Date // Specific date/time when to send reminder
+  message?: string // Reason/message for the reminder
   notificationType: 'email' | 'in-app' | 'both'
   emailSent?: boolean
+}
+
+// For recurring reminders (habits, daily tasks)
+export interface IRecurringReminderConfig {
+  enabled: boolean
+  reminderTime: string // Time only (HH:MM format) for daily recurring reminders
+  message?: string // Reason/message for the reminder
+  notificationType: 'email' | 'in-app' | 'both'
 }
 
 export interface ITask extends Document {
@@ -14,7 +23,6 @@ export interface ITask extends Document {
   category: 'Study' | 'Projects' | 'College' | 'Assignments' | 'LeetCode' | 'Freelancing' | 'Content' | 'Health' | 'Finance' | 'Personal'
   priority: 'Low' | 'Medium' | 'High'
   difficulty: 'Easy' | 'Medium' | 'Hard'
-  energyRequired: 'Low' | 'Medium' | 'High'
   status: 'Todo' | 'In Progress' | 'Testing' | 'Completed'
   deadline: Date
   estimatedTime?: number // In minutes
@@ -64,12 +72,6 @@ const TaskSchema: Schema<ITask> = new Schema(
       required: true,
       default: 'Medium',
     },
-    energyRequired: {
-      type: String,
-      enum: ['Low', 'Medium', 'High'],
-      required: true,
-      default: 'Medium',
-    },
     status: {
       type: String,
       enum: ['Todo', 'In Progress', 'Testing', 'Completed'],
@@ -111,7 +113,8 @@ const TaskSchema: Schema<ITask> = new Schema(
       type: [
         {
           enabled: { type: Boolean, default: true },
-          timeBefore: { type: Number, required: true }, // minutes
+          reminderTime: { type: Date, required: true }, // Specific date/time
+          message: { type: String, required: false },
           notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
           emailSent: { type: Boolean, default: false },
         },
@@ -136,6 +139,9 @@ const TaskSchema: Schema<ITask> = new Schema(
 // Index for query optimization
 TaskSchema.index({ user: 1, deadline: 1 })
 TaskSchema.index({ deadline: 1, reminderOffset: 1, reminderSent: 1 })
+TaskSchema.index({ user: 1, status: 1, priority: 1 })
+TaskSchema.index({ user: 1, category: 1 })
+TaskSchema.index({ project: 1 })
 
 const Task: Model<ITask> = mongoose.models.Task || mongoose.model<ITask>('Task', TaskSchema)
 

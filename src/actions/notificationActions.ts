@@ -3,6 +3,7 @@
 import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Notification from '@/models/Notification'
+import mongoose from 'mongoose'
 
 export interface UserNotification {
   id: string
@@ -61,3 +62,30 @@ export async function markNotificationReadAction(id: string): Promise<{ success:
     return { success: false, error: error.message || 'Failed to update notification.' }
   }
 }
+
+export async function createNotificationAction(data: {
+  userId: string
+  title: string
+  message: string
+  type?: 'info' | 'warning' | 'alert' | 'system'
+  scheduledFor?: Date
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    await dbConnect()
+
+    await Notification.create({
+      user: new mongoose.Types.ObjectId(data.userId),
+      title: data.title,
+      message: data.message,
+      type: data.type || 'info',
+      scheduledFor: data.scheduledFor || new Date(),
+      isRead: false,
+    })
+
+    return { success: true }
+  } catch (error: any) {
+    console.error('Create notification error:', error)
+    return { success: false, error: error.message || 'Failed to create notification.' }
+  }
+}
+

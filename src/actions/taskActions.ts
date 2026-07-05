@@ -43,6 +43,7 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       notes,
       reminderOffset,
       reminderConfigs,
+      project,
     } = data
 
     if (!title || !deadline) {
@@ -53,17 +54,20 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
 
     // Prepare reminder configurations
     let taskReminderConfigs: IReminderConfig[] = []
-    
+
     // Support new reminderConfigs array format
     if (reminderConfigs && Array.isArray(reminderConfigs) && reminderConfigs.length > 0) {
       taskReminderConfigs = reminderConfigs
     }
     // Fallback to old reminderOffset format for backward compatibility
     else if (reminderOffset && Number(reminderOffset) > 0) {
+      // Convert old timeBefore (minutes) to a specific time before deadline
+      const deadlineDate = new Date(deadline)
+      const reminderTime = new Date(deadlineDate.getTime() - Number(reminderOffset) * 60 * 1000)
       taskReminderConfigs = [
         {
           enabled: true,
-          timeBefore: Number(reminderOffset),
+          reminderTime: reminderTime,
           notificationType: 'both',
         },
       ]
@@ -86,11 +90,17 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       reminderOffset: reminderOffset ? Number(reminderOffset) : 0,
       reminderConfigs: taskReminderConfigs,
       attachments: [],
+      project: project ? new mongoose.Types.ObjectId(project) : undefined,
     })
 
     // Create reminder entries for each configured reminder
     if (taskReminderConfigs.length > 0) {
-      await createTaskReminders(newTask._id.toString(), taskReminderConfigs)
+      // Convert reminderTime strings to Date objects for new format
+      const configsForService = taskReminderConfigs.map((config: any) => ({
+        ...config,
+        reminderTime: config.reminderTime ? new Date(config.reminderTime) : undefined,
+      }))
+      await createTaskReminders(newTask._id.toString(), configsForService)
     }
 
     return {
@@ -148,6 +158,26 @@ export async function getTasksAction(filter: string = 'All'): Promise<TaskRespon
   }
 }
 
+export async function getProjectTasksAction(projectId: string): Promise<TaskResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const tasks = await Task.find({
+      user: session.user.id,
+      project: new mongoose.Types.ObjectId(projectId),
+    }).sort({ deadline: 1, priority: -1 })
+
+    return {
+      success: true,
+      tasks: JSON.parse(JSON.stringify(tasks)),
+    }
+  } catch (error: any) {
+    console.error('Get Project Tasks Action Error:', error)
+    return { success: false, error: error.message || 'Failed to fetch project tasks.' }
+  }
+}
+
 export async function updateTaskAction(id: string, data: any): Promise<TaskResponse> {
   try {
     const session = await checkAuth()
@@ -171,6 +201,7 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
       notes,
       reminderOffset,
       reminderConfigs,
+      project,
     } = data
 
     const originalDeadline = task.deadline.getTime()
@@ -185,6 +216,7 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
     task.notes = notes !== undefined ? notes : task.notes
     task.tags = tags || task.tags
     task.estimatedTime = estimatedTime !== undefined ? Number(estimatedTime) : task.estimatedTime
+    task.project = project ? new mongoose.Types.ObjectId(project) : task.project
     
     if (deadline) {
       task.deadline = new Date(deadline)
@@ -208,7 +240,12 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
 
       // Create new reminders based on configs
       if (reminderConfigs && Array.isArray(reminderConfigs) && reminderConfigs.length > 0) {
-        await createTaskReminders(id, reminderConfigs)
+        // Convert reminderTime strings to Date objects for new format
+        const configsForService = reminderConfigs.map((config: any) => ({
+          ...config,
+          reminderTime: config.reminderTime ? new Date(config.reminderTime) : undefined,
+        }))
+        await createTaskReminders(id, configsForService)
       } else if (task.reminderOffset && task.reminderOffset > 0) {
         // Fallback to old reminder offset system
         const triggerTime = new Date(currentDeadlineTime - task.reminderOffset * 60 * 1000)

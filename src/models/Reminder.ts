@@ -3,7 +3,8 @@ import mongoose, { Schema, Document, Model } from 'mongoose'
 export interface IReminder extends Document {
   user: mongoose.Types.ObjectId
   title: string
-  relatedTo?: 'task' | 'exam' | 'assignment' | 'event' | 'custom'
+  message?: string // Custom message/reason for the reminder
+  relatedTo?: 'task' | 'exam' | 'assignment' | 'event' | 'custom' | 'project' | 'content' | 'habit' | 'timeblock'
   relatedId?: mongoose.Types.ObjectId // Reference to task, exam, or assignment
   triggerTime: Date
   isSent: boolean
@@ -25,9 +26,14 @@ const ReminderSchema: Schema<IReminder> = new Schema(
       required: [true, 'Reminder title is required'],
       trim: true,
     },
+    message: {
+      type: String,
+      required: false,
+      trim: true,
+    },
     relatedTo: {
       type: String,
-      enum: ['task', 'exam', 'assignment', 'event', 'custom'],
+      enum: ['task', 'exam', 'assignment', 'event', 'custom', 'project', 'content', 'habit', 'timeblock'],
       default: 'custom',
     },
     relatedId: {
@@ -58,6 +64,8 @@ const ReminderSchema: Schema<IReminder> = new Schema(
 )
 
 ReminderSchema.index({ triggerTime: 1, isSent: 1 })
+ReminderSchema.index({ user: 1, triggerTime: 1 })
+ReminderSchema.index({ relatedTo: 1, relatedId: 1 })
 
 const Reminder: Model<IReminder> = mongoose.models.Reminder || mongoose.model<IReminder>('Reminder', ReminderSchema)
 

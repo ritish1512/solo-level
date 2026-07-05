@@ -25,6 +25,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { useToast } from '@/components/ui/Toast'
+import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
 import { getHabitsAction, toggleHabitDateAction } from '@/actions/habitActions'
 import { getHabitRecurrenceLabel, isHabitDueForDate, formatLocalDate } from '@/lib/habitRecurrence'
 import { updateTaskStatusAction } from '@/actions/taskActions'
@@ -187,6 +188,7 @@ export default function DashboardClient({
     title: '',
     startTime: '08:00',
     endTime: '09:00',
+    reminderConfigs: [] as any[],
   })
 
   // Date String YYYY-MM-DD (local date)
@@ -728,7 +730,7 @@ export default function DashboardClient({
           setTimeBlocks((prev) => [...prev, res.timeBlock].sort((a, b) => a.position - b.position))
         }
         setShowAddBlock(false)
-        setNewBlock({ title: '', startTime: '08:00', endTime: '09:00' })
+        setNewBlock({ title: '', startTime: '08:00', endTime: '09:00', reminderConfigs: [] })
       } else {
         toast(res.error || 'Failed to add planner slot', 'error')
       }
@@ -811,7 +813,7 @@ export default function DashboardClient({
       )}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 rounded-xl border border-border bg-card/40 backdrop-blur-md gap-4">
         <div>
-          <h2 className="text-2xl md:text-3xl font-extrabold text-zinc-950 dark:text-white">
+          <h2 className=" text-2xl md:text-3xl font-extrabold text-zinc-950 dark:text-white">
             Good to see you, {userProfile?.name?.split(' ')[0] || 'Monarch'}
           </h2>
           <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium italic">
@@ -1093,6 +1095,14 @@ export default function DashboardClient({
                         className="h-8"
                       />
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Reminders</Label>
+                    <ReminderConfigPanel
+                      configs={newBlock.reminderConfigs}
+                      onConfigsChange={(configs) => setNewBlock((prev) => ({ ...prev, reminderConfigs: configs }))}
+                    />
                   </div>
 
                   <div className="flex gap-2 justify-end pt-2">

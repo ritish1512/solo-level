@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useTransition } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Calendar as CalendarIcon,
   Check,
@@ -16,19 +17,21 @@ import {
   Video,
   X,
   Youtube,
+  Bell,
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
+import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
 import {
   createContentIdeaAction,
   deleteContentIdeaAction,
   updateContentIdeaAction,
 } from '@/actions/contentActions'
 
-type ContentPlatform = 'YouTube' | 'Instagram' | 'Twitter' | 'LinkedIn'|'Portfolio' | 'Other'
+type ContentPlatform = 'YouTube' | 'Instagram' | 'Twitter' | 'LinkedIn' | 'Portfolio' | 'Other'
 type ContentStatus = 'Idea' | 'Scripting' | 'Recording' | 'Editing' | 'Posted'
 
 interface ContentIdea {
@@ -40,6 +43,7 @@ interface ContentIdea {
   scheduledDate?: string
   notes?: string
   mediaUrl?: string
+  reminderConfigs?: Array<{ enabled: boolean; reminderTime: string; message?: string; notificationType: 'email' | 'in-app' | 'both' }>
 }
 
 interface ContentClientProps {
@@ -54,6 +58,7 @@ type ContentForm = {
   notes: string
   script: string
   mediaUrl: string
+  reminderConfigs: Array<{ enabled: boolean; reminderTime: string; message?: string; notificationType: 'email' | 'in-app' | 'both' }>
 }
 
 const emptyForm: ContentForm = {
@@ -64,6 +69,7 @@ const emptyForm: ContentForm = {
   notes: '',
   script: '',
   mediaUrl: '',
+  reminderConfigs: [],
 }
 
 const platforms: ContentPlatform[] = ['YouTube', 'Instagram', 'Twitter', 'LinkedIn', 'Portfolio', 'Other']
@@ -92,6 +98,7 @@ function ideaToForm(idea: ContentIdea): ContentForm {
     notes: idea.notes || '',
     script: idea.script || '',
     mediaUrl: idea.mediaUrl || '',
+    reminderConfigs: idea.reminderConfigs || [],
   }
 }
 
@@ -103,6 +110,8 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
   const [batchPlanner, setBatchPlanner] = useState<string[]>([])
   const [form, setForm] = useState<ContentForm>(initialIdeas[0] ? ideaToForm(initialIdeas[0]) : emptyForm)
   const [uploading, setUploading] = useState(false)
+  const [showReminderModal, setShowReminderModal] = useState(false)
+  const [selectedContentForReminder, setSelectedContentForReminder] = useState<ContentIdea | null>(null)
 
   const scheduledIdeas = ideas
     .filter((idea) => idea.scheduledDate)
@@ -245,6 +254,7 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
                   <button
                     key={idea._id}
                     type="button"
+                    suppressHydrationWarning
                     onClick={() => handleSelectIdea(idea)}
                     className={`w-full rounded-lg border p-3.5 text-left transition-all ${
                       isSelected
@@ -265,15 +275,29 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
                         </h4>
                       </div>
 
-                      <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
-                        idea.status === 'Posted'
-                          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500'
-                          : idea.status === 'Editing'
-                            ? 'border-amber-500/20 bg-amber-500/10 text-amber-500'
-                            : 'border-border bg-zinc-500/10 text-zinc-500'
-                      }`}>
-                        {idea.status}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setSelectedContentForReminder(idea)
+                            setShowReminderModal(true)
+                          }}
+                          variant="ghost"
+                          size="sm"
+                          className="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 p-1 h-6 w-6"
+                        >
+                          <Bell className="h-3.5 w-3.5" />
+                        </Button>
+                        <span className={`shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
+                          idea.status === 'Posted'
+                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500'
+                            : idea.status === 'Editing'
+                              ? 'border-amber-500/20 bg-amber-500/10 text-amber-500'
+                              : 'border-border bg-zinc-500/10 text-zinc-500'
+                        }`}>
+                          {idea.status}
+                        </span>
+                      </div>
                     </div>
                   </button>
                 )
@@ -367,16 +391,31 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
                     </select>
                   </div>
 
-                  <div className="space-y-1.5 ">
-                    <Label htmlFor="content-date">Schedule</Label>
-                    <Input
-                      id="content-date"
-                      type="date"
-                      value={form.scheduledDate}
-                      className="flex min-h-11 w-full rounded-md border border-border bg-background/80 px-3 py-2 text-sm text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-zinc-50 [&::-webkit-calendar-picker-indicator]:-ml-5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-                      onChange={(event) => handleChange('scheduledDate', event.target.value)}
-                    />
-
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Label htmlFor="content-date">Scheduled Date</Label>
+                      <Input
+                        id="content-date"
+                        type="date"
+                        value={form.scheduledDate}
+                        className="flex min-h-11 w-full rounded-md border border-border bg-background/80 px-3 py-2 text-sm text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-zinc-50 [&::-webkit-calendar-picker-indicator]:-ml-5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
+                        onChange={(event) => handleChange('scheduledDate', event.target.value)}
+                      />
+                    </div>
+                    {form.scheduledDate && (
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          setSelectedContentForReminder(selectedIdea || { ...form, _id: 'temp' } as any)
+                          setShowReminderModal(true)
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="mt-5 h-11 w-11 flex items-center justify-center text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                      >
+                        <Bell className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -494,19 +533,97 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
                     {platformIcons[idea.platform]}
                     <span className="truncate text-sm font-bold text-zinc-950 dark:text-zinc-150">{idea.title}</span>
                   </div>
-                  <span className="shrink-0 text-xs font-bold text-indigo-500">
-                    {new Date(idea.scheduledDate!).toLocaleDateString([], {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setSelectedContentForReminder(idea)
+                        setShowReminderModal(true)
+                      }}
+                      variant="ghost"
+                      size="sm"
+                      className="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 p-1 h-6 w-6"
+                    >
+                      <Bell className="h-3.5 w-3.5" />
+                    </Button>
+                    <span className="shrink-0 text-xs font-bold text-indigo-500">
+                      {new Date(idea.scheduledDate!).toLocaleDateString([], {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                  </div>
                 </button>
               ))
             )}
           </CardContent>
         </Card>
       </div>
+
+      {/* Content Reminder Modal */}
+      <AnimatePresence>
+        {showReminderModal && selectedContentForReminder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-lg bg-card border border-border rounded-xl p-6 relative max-h-[90vh] overflow-y-auto">
+              <button onClick={() => setShowReminderModal(false)} className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-200"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold mb-2">Set Reminders for {selectedContentForReminder.title}</h3>
+              <p className="text-sm text-zinc-500 mb-6">Configure custom reminders for this content</p>
+
+              <ReminderConfigPanel
+                configs={selectedContentForReminder.reminderConfigs || []}
+                onConfigsChange={(configs) => {
+                  setSelectedContentForReminder((prev) => prev ? { ...prev, reminderConfigs: configs } : null)
+                }}
+                title="Content Reminders"
+                description="Set reminder times for this content"
+              />
+
+              <div className="mt-6 flex gap-3">
+                <Button
+                  onClick={async () => {
+                    startTransition(async () => {
+                      if (!selectedContentForReminder) return
+                      const res = await updateContentIdeaAction(selectedContentForReminder._id, {
+                        ...selectedContentForReminder,
+                        reminderConfigs: selectedContentForReminder.reminderConfigs,
+                      })
+                      if (res.success) {
+                        toast('Reminders updated successfully!', 'success')
+                        setIdeas((prev) =>
+                          prev.map((idea) =>
+                            idea._id === selectedContentForReminder._id
+                              ? { ...idea, reminderConfigs: selectedContentForReminder.reminderConfigs }
+                              : idea
+                          )
+                        )
+                        if (selectedIdea && selectedIdea._id === selectedContentForReminder._id) {
+                          setSelectedIdea({ ...selectedIdea, reminderConfigs: selectedContentForReminder.reminderConfigs })
+                        }
+                        setShowReminderModal(false)
+                      } else {
+                        toast(res.error || 'Failed to update reminders', 'error')
+                      }
+                    })
+                  }}
+                  variant="primary"
+                  className="flex-1"
+                  isLoading={isPending}
+                >
+                  Save Reminders
+                </Button>
+                <Button
+                  onClick={() => setShowReminderModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

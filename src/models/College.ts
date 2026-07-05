@@ -14,6 +14,7 @@ export interface ISubject extends Document {
     attended: boolean
     note?: string
   }[]
+  reminderConfigs: IReminderConfig[]
   createdAt: Date
   updatedAt: Date
 }
@@ -32,6 +33,18 @@ const SubjectSchema: Schema<ISubject> = new Schema(
           date: { type: Date, default: Date.now },
           attended: { type: Boolean, required: true },
           note: { type: String, required: false, trim: true },
+        },
+      ],
+      default: [],
+    },
+    reminderConfigs: {
+      type: [
+        {
+          enabled: { type: Boolean, default: true },
+          reminderTime: { type: Date, required: true }, // Specific date/time
+          message: { type: String, required: false },
+          notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
+          emailSent: { type: Boolean, default: false },
         },
       ],
       default: [],
@@ -69,7 +82,8 @@ const AssignmentSchema: Schema<IAssignment> = new Schema(
       type: [
         {
           enabled: { type: Boolean, default: true },
-          timeBefore: { type: Number, required: true },
+          reminderTime: { type: Date, required: true }, // Specific date/time
+          message: { type: String, required: false },
           notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
           emailSent: { type: Boolean, default: false },
         },
@@ -84,7 +98,7 @@ const AssignmentSchema: Schema<IAssignment> = new Schema(
 export interface IExam extends Document {
   user: mongoose.Types.ObjectId
   subject: mongoose.Types.ObjectId // Reference to Subject
-  examType: 'Internal' | 'Semester'
+  examType: 'Test' | 'Internal' | 'Semester'
   date: Date
   syllabus?: string
   marksObtained?: number
@@ -98,7 +112,7 @@ const ExamSchema: Schema<IExam> = new Schema(
   {
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     subject: { type: Schema.Types.ObjectId, ref: 'Subject', required: true },
-    examType: { type: String, enum: ['Internal', 'Semester'], default: 'Internal' },
+    examType: { type: String, enum: ['Test', 'Internal', 'Semester'], default: 'Test' },
     date: { type: Date, required: true },
     syllabus: { type: String, required: false },
     marksObtained: { type: Number, required: false },
@@ -107,7 +121,8 @@ const ExamSchema: Schema<IExam> = new Schema(
       type: [
         {
           enabled: { type: Boolean, default: true },
-          timeBefore: { type: Number, required: true },
+          reminderTime: { type: Date, required: true }, // Specific date/time
+          message: { type: String, required: false },
           notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
           emailSent: { type: Boolean, default: false },
         },

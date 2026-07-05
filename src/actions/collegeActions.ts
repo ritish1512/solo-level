@@ -8,7 +8,11 @@ import {
   createAssignmentReminders,
   deleteAssignmentReminders,
   createExamReminders,
-  deleteExamReminders
+  deleteExamReminders,
+  createSubjectReminders,
+  deleteSubjectReminders,
+  updateSubjectReminders,
+  generateAutoReminders
 } from '@/services/reminderService'
 
 export interface CollegeResponse {
@@ -36,7 +40,7 @@ async function checkAuth() {
 export async function createSubjectAction(data: any): Promise<CollegeResponse> {
   try {
     const session = await checkAuth()
-    const { name, code, credits } = data
+    const { name, code, credits, reminderConfigs } = data
 
     if (!name) {
       return { success: false, error: 'Subject name is required.' }
@@ -51,7 +55,18 @@ export async function createSubjectAction(data: any): Promise<CollegeResponse> {
       credits: credits ? Number(credits) : 3,
       attendedClasses: 0,
       totalClasses: 0,
+      reminderConfigs: reminderConfigs || [],
     })
+
+    // Create reminder documents if reminder configs provided
+    if (reminderConfigs && reminderConfigs.length > 0) {
+      // Convert reminderTime strings to Date objects
+      const configsForService = reminderConfigs.map((config: any) => ({
+        ...config,
+        reminderTime: new Date(config.reminderTime),
+      }))
+      await createSubjectReminders(newSubject._id.toString(), configsForService)
+    }
 
     return {
       success: true,
@@ -175,6 +190,9 @@ export async function deleteSubjectAction(id: string): Promise<CollegeResponse> 
       return { success: false, error: 'Subject not found.' }
     }
 
+    // Delete subject reminders
+    await deleteSubjectReminders(id)
+
     // Cascade delete assignments and exams belonging to this subject, including their reminders
     const assignments = await Assignment.find({ subject: id })
     for (const a of assignments) {
@@ -211,22 +229,26 @@ export async function createAssignmentAction(data: any): Promise<CollegeResponse
 
     await dbConnect()
 
+    const dueDateObj = new Date(dueDate)
     const newAssignment = await Assignment.create({
       user: new mongoose.Types.ObjectId(session.user.id),
       title: title.trim(),
       description,
       subject: new mongoose.Types.ObjectId(subjectId),
-      dueDate: new Date(dueDate),
+      dueDate: dueDateObj,
       status: 'Todo',
       fileUrl,
     })
 
-    // Create default reminders for the assignment (1 day before, 2 hours before)
-    await createAssignmentReminders(newAssignment._id.toString())
+    // Generate automatic reminders (1 week before, 1 day before, on the day)
+    const autoReminders = generateAutoReminders(dueDateObj, 'assignment')
+    if (autoReminders.length > 0) {
+      await createAssignmentReminders(newAssignment._id.toString(), autoReminders)
+    }
 
     return {
       success: true,
-      message: 'Assignment recorded!',
+      message: `Assignment recorded! You'll receive automatic reminders 1 week before, 1 day before, and on the due date.`,
       assignment: JSON.parse(JSON.stringify(newAssignment)),
     }
   } catch (error: any) {
@@ -320,20 +342,24 @@ export async function createExamAction(data: any): Promise<CollegeResponse> {
 
     await dbConnect()
 
+    const examDateObj = new Date(date)
     const newExam = await Exam.create({
       user: new mongoose.Types.ObjectId(session.user.id),
       subject: new mongoose.Types.ObjectId(subjectId),
       examType,
-      date: new Date(date),
+      date: examDateObj,
       syllabus,
     })
 
-    // Create default reminders for the exam (1 day before, 2 hours before)
-    await createExamReminders(newExam._id.toString())
+    // Generate automatic reminders (1 week before, 1 day before, on the day)
+    const autoReminders = generateAutoReminders(examDateObj, 'exam')
+    if (autoReminders.length > 0) {
+      await createExamReminders(newExam._id.toString(), autoReminders)
+    }
 
     return {
       success: true,
-      message: 'Exam scheduled!',
+      message: `Exam scheduled! You'll receive automatic reminders 1 week before, 1 day before, and on the exam date.`,
       exam: JSON.parse(JSON.stringify(newExam)),
     }
   } catch (error: any) {
@@ -387,6 +413,32 @@ export async function updateExamAction(id: string, marksObtained?: number, maxMa
     }
   } catch (error: any) {
     console.error('Update Exam Error:', error)
-    return { success: false, error: error.message || 'Failed to update grades.' }
+    return { success: false, error: error.message || 'Failed to update exam grades.' }
+  }
+}
+
+export async function updateSubjectRemindersAction(subjectId: string, reminderConfigs: any[]): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    
+    // Verify subject belongs to user
+    const subject = await Subject.findOne({ _id: subjectId, user: session.user.id })
+    if (!subject) {
+      return { success: false, error: 'Subject not found.' }
+    }
+
+    const result = await updateSubjectReminders(subjectId, reminderConfigs)
+    
+    if (result.success) {
+      return {
+        success: true,
+        message: 'Subject reminders updated successfully!',
+      }
+    } else {
+      return { success: false, error: result.error || 'Failed to update reminders.' }
+    }
+  } catch (error: any) {
+    console.error('Update Subject Reminders Error:', error)
+    return { success: false, error: error.message || 'Failed to update subject reminders.' }
   }
 }

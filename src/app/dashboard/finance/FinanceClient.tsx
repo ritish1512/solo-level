@@ -150,12 +150,12 @@ export default function FinanceClient({
   }
 
   const handleEditTx = (tx: any) => {
-    // Only allow editing within 24 hours of creation
-    const createdAt = tx.createdAt ? new Date(tx.createdAt) : new Date(tx.date)
+    // Only allow editing on the same day
+    const txDate = new Date(tx.date)
     const now = new Date()
-    const msIn24h = 24 * 60 * 60 * 1000
-    if (now.getTime() - createdAt.getTime() > msIn24h) {
-      toast('Transactions can only be edited within 24 hours of creation.', 'error')
+    const sameDay = txDate.getFullYear() === now.getFullYear() && txDate.getMonth() === now.getMonth() && txDate.getDate() === now.getDate()
+    if (!sameDay) {
+      toast('Transactions can only be edited on the same day they were created.', 'error')
       return
     }
 
@@ -300,12 +300,12 @@ export default function FinanceClient({
                       {tx.type === 'Income' ? '+' : '-'}₹{tx.amount}
                     </span>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => handleEditTx(tx)} className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-400 hover:text-indigo-500 rounded transition-all">
+                      <button onClick={() => handleEditTx(tx)} className="opacity-0 group-hover:opacity-100 p-1 text-zinc-400 hover:text-indigo-500 rounded transition-all">
                         <Plus className="w-4 h-4 rotate-45 transform" />
                       </button>
                       <button 
                         onClick={() => handleDeleteTx(tx._id)}
-                        className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-1 text-zinc-400 hover:text-rose-500 rounded transition-all"
+                        className="opacity-0 group-hover:opacity-100 p-1 text-zinc-400 hover:text-rose-500 rounded transition-all"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

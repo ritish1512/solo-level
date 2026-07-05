@@ -10,22 +10,25 @@ import {
   FileText, 
   Check, 
   X, 
-  BookOpen
+  BookOpen,
+  Bell
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
-import { 
-  createSubjectAction, 
+import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
+import {
+  createSubjectAction,
   logSubjectAttendanceAction,
   deleteSubjectAction,
   createAssignmentAction,
   updateAssignmentStatusAction,
   deleteAssignmentAction,
   createExamAction,
-  updateExamAction
+  updateExamAction,
+  updateSubjectRemindersAction
 } from '@/actions/collegeActions'
 
 interface CollegeClientProps {
@@ -97,10 +100,12 @@ export default function CollegeClient({
   // Dialog triggers
   const [showAddSubject, setShowAddSubject] = useState(false)
   const [showAddAssignment, setShowAddAssignment] = useState(false)
+  const [showReminderModal, setShowReminderModal] = useState(false)
+  const [selectedSubjectForReminder, setSelectedSubjectForReminder] = useState<any>(null)
   const [showAddExam, setShowAddExam] = useState(false)
 
   // Forms
-  const [subjectForm, setSubjectForm] = useState({ name: '', code: '' })
+  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', reminderConfigs: [] as Array<{ enabled: boolean; reminderTime: string; message?: string; notificationType: 'email' | 'in-app' | 'both' }> })
   const [assignmentForm, setAssignmentForm] = useState({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '' })
   const [examForm, setExamForm] = useState({ subjectId: '', examType: 'Internal', date: '', syllabus: '' })
 
@@ -185,7 +190,7 @@ export default function CollegeClient({
           setAttendanceNotes((prev) => ({ ...prev, [res.subject._id]: '' }))
           setAttendedToday((prev) => ({ ...prev, [res.subject._id]: false }))
         }
-        setSubjectForm({ name: '', code: '' })
+        setSubjectForm({ name: '', code: '', reminderConfigs: [] })
         setShowAddSubject(false)
       } else {
         toast(res.error || 'Failed to add subject', 'error')
@@ -498,7 +503,18 @@ export default function CollegeClient({
                         </div>
                       </div>
 
-                      <div className="flex items-center">
+                      <div className="flex items-center gap-3">
+                        <Button
+                          onClick={() => {
+                            setSelectedSubjectForReminder(sub)
+                            setShowReminderModal(true)
+                          }}
+                          size="sm"
+                          variant="ghost"
+                          className="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                        >
+                          <Bell className="h-4 w-4" />
+                        </Button>
                         <label className="flex items-center gap-2 cursor-pointer text-xs font-semibold text-zinc-600 dark:text-zinc-400 select-none">
                           <input
                             type="checkbox"
@@ -533,7 +549,9 @@ export default function CollegeClient({
 
                     {lastNote && (
                       <div className="bg-zinc-50 dark:bg-zinc-900/50 p-2.5 rounded-lg border border-border/60 text-xs text-zinc-600 dark:text-zinc-400">
-                        <span className="font-bold text-[10px] uppercase tracking-wider text-zinc-400 block mb-1">Latest Logged Note ({new Date(lastNote.date).toLocaleDateString()}):</span>
+                        <span className="font-bold text-[10px] uppercase tracking-wider text-zinc-400 block mb-1" suppressHydrationWarning>
+                          Latest Logged Note ({new Date(lastNote.date).toLocaleDateString()}):
+                        </span>
                         <p className="italic">{lastNote.note || 'Attended with no written study note.'}</p>
                       </div>
                     )}
@@ -655,6 +673,13 @@ export default function CollegeClient({
                   <Label htmlFor="subCode">Subject Code</Label>
                   <Input id="subCode" type="text" placeholder="e.g. CS102" value={subjectForm.code} onChange={(e) => setSubjectForm((prev) => ({ ...prev, code: e.target.value }))} />
                 </div>
+                <div className="space-y-2">
+                  <Label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Daily Class Reminders</Label>
+                  <ReminderConfigPanel
+                    configs={subjectForm.reminderConfigs}
+                    onConfigsChange={(configs) => setSubjectForm((prev) => ({ ...prev, reminderConfigs: configs }))}
+                  />
+                </div>
                 <Button type="submit" variant="primary" className="w-full" isLoading={isPending}>Add Subject</Button>
               </form>
             </motion.div>
@@ -728,7 +753,7 @@ export default function CollegeClient({
                 <div className="space-y-1">
                   <Label htmlFor="exType">Exam Type</Label>
                   <select id="exType" value={examForm.examType} onChange={(e) => setExamForm((prev) => ({ ...prev, examType: e.target.value as any }))} className="flex h-10 w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <option value="Internal">Test (class test)</option>
+                    <option value="Test">Test (class test)</option>
                     <option value="Internal">Internal (Midterm)</option>
                     <option value="Semester">Semester (Finals)</option>
                   </select>
@@ -743,6 +768,66 @@ export default function CollegeClient({
                 </div>
                 <Button type="submit" variant="primary" className="w-full" isLoading={isPending}>Schedule Exam</Button>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 4. Subject Reminder Modal */}
+      <AnimatePresence>
+        {showReminderModal && selectedSubjectForReminder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-lg bg-card border border-border rounded-xl p-6 relative max-h-[90vh] overflow-y-auto">
+              <button onClick={() => setShowReminderModal(false)} className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-200"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold mb-2">Set Reminders for {selectedSubjectForReminder.name}</h3>
+              <p className="text-sm text-zinc-500 mb-6">Configure reminders for assignments, tests, internals, and semester exams</p>
+
+              <ReminderConfigPanel
+                configs={selectedSubjectForReminder.reminderConfigs || []}
+                onConfigsChange={(configs) => {
+                  setSelectedSubjectForReminder((prev: any) => ({ ...prev, reminderConfigs: configs }))
+                }}
+                title="Subject Reminders"
+                description="Set reminder times for this subject"
+              />
+
+              <div className="mt-6 flex gap-3">
+                <Button
+                  onClick={async () => {
+                    startTransition(async () => {
+                      const res = await updateSubjectRemindersAction(
+                        selectedSubjectForReminder._id,
+                        selectedSubjectForReminder.reminderConfigs
+                      )
+                      if (res.success) {
+                        toast('Reminders updated successfully!', 'success')
+                        setSubjects((prev) =>
+                          prev.map((s) =>
+                            s._id === selectedSubjectForReminder._id
+                              ? { ...s, reminderConfigs: selectedSubjectForReminder.reminderConfigs }
+                              : s
+                          )
+                        )
+                        setShowReminderModal(false)
+                      } else {
+                        toast(res.error || 'Failed to update reminders', 'error')
+                      }
+                    })
+                  }}
+                  variant="primary"
+                  className="flex-1"
+                  isLoading={isPending}
+                >
+                  Save Reminders
+                </Button>
+                <Button
+                  onClick={() => setShowReminderModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
             </motion.div>
           </div>
         )}

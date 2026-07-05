@@ -1,11 +1,121 @@
 
 import mongoose from 'mongoose'
 import dbConnect from '@/lib/mongodb'
-import Task, { IReminderConfig } from '@/models/Task'
+import Task, { IReminderConfig, IRecurringReminderConfig } from '@/models/Task'
 import Reminder from '@/models/Reminder'
 import User from '@/models/User'
-import { sendTaskDeadlineReminder } from './emailService'
+import Notification from '@/models/Notification'
+import {
+  sendTaskDeadlineReminder,
+  sendExamReminder,
+  sendAssignmentReminder,
+  sendDailyHabitReminder,
+  sendTimeBlockNotification,
+  sendCustomEventReminder,
+  sendScheduledContentReminder
+} from './emailService'
 import { REMINDER_PRESETS } from '@/lib/reminderUtils'
+
+/**
+ * Generate automatic reminder presets for assignments/exams
+ * Creates reminders for: 1 week before, 1 day before, and on the day
+ */
+export function generateAutoReminders(dueDate: Date, itemType: 'assignment' | 'exam'): IReminderConfig[] {
+  const reminders: IReminderConfig[] = []
+  const oneWeekBefore = new Date(dueDate)
+  oneWeekBefore.setDate(oneWeekBefore.getDate() - 7)
+  
+  const oneDayBefore = new Date(dueDate)
+  oneDayBefore.setDate(oneDayBefore.getDate() - 1)
+  
+  const onTheDay = new Date(dueDate)
+  onTheDay.setHours(9, 0, 0, 0) // 9 AM on the due date
+
+  // Only add reminders if they're in the future
+  const now = new Date()
+
+  if (oneWeekBefore > now) {
+    reminders.push({
+      enabled: true,
+      reminderTime: oneWeekBefore,
+      message: `${itemType === 'assignment' ? 'Assignment' : 'Exam'} due in 1 week`,
+      notificationType: 'both',
+    })
+  }
+
+  if (oneDayBefore > now) {
+    reminders.push({
+      enabled: true,
+      reminderTime: oneDayBefore,
+      message: `${itemType === 'assignment' ? 'Assignment' : 'Exam'} due tomorrow`,
+      notificationType: 'both',
+    })
+  }
+
+  if (onTheDay > now) {
+    reminders.push({
+      enabled: true,
+      reminderTime: onTheDay,
+      message: `${itemType === 'assignment' ? 'Assignment' : 'Exam'} due today`,
+      notificationType: 'both',
+    })
+  }
+
+  return reminders
+}
+
+/**
+ * Create reminder configurations for a project
+ */
+export async function createProjectReminders(
+  projectId: string,
+  reminderConfigs: IReminderConfig[]
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    await dbConnect()
+    const Project = await import('@/models/Project')
+    const project = await Project.default.findById(projectId)
+    if (!project) {
+      return { success: false, error: 'Project not found' }
+    }
+
+    // Create reminder documents
+    for (const config of reminderConfigs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
+      if (triggerTime > new Date()) {
+        await Reminder.create({
+          user: project.user,
+          title: `Project Reminder: "${project.title}"`,
+          message: config.message || `Project deadline approaching: "${project.title}"`,
+          relatedTo: 'project',
+          relatedId: project._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+
+    return { success: true, message: 'Project reminders created successfully' }
+  } catch (error: any) {
+    console.error('Create Project Reminders Error:', error)
+    return { success: false, error: error.message || 'Failed to create project reminders' }
+  }
+}
+
+/**
+ * Delete reminders for a project
+ */
+export async function deleteProjectReminders(projectId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(projectId) })
+  } catch (error) {
+    console.error('Delete Project Reminders Error:', error)
+  }
+}
 
 /**
  * Create reminder configurations for a task
@@ -30,13 +140,14 @@ export async function createTaskReminders(
     for (const config of reminderConfigs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(task.deadline.getTime() - config.timeBefore * 60 * 1000)
+      const triggerTime = new Date(config.reminderTime)
 
       // Only create reminder if trigger time is in the future
       if (triggerTime > new Date()) {
         await Reminder.create({
           user: task.user,
-          title: `Task Reminder: "${task.title}" is due soon!`,
+          title: `Task Reminder: "${task.title}"`,
+          message: config.message || `Task "${task.title}" is due soon!`,
           relatedTo: 'task',
           relatedId: taskId,
           triggerTime,
@@ -96,36 +207,206 @@ export async function processPendingReminders(): Promise<{
     const pendingReminders = await Reminder.find({
       isSent: false,
       triggerTime: { $lte: now },
-    }).populate('user relatedId')
+    }).populate('user')
 
     for (const reminder of pendingReminders) {
       processed++
 
       try {
+        const user = reminder.user as any
+        if (!user || !user.email) {
+          reminder.isSent = true
+          await reminder.save()
+          continue
+        }
+
         // Send email if channel includes email
         if (reminder.channel === 'email' || reminder.channel === 'both') {
-          const user = reminder.user as any
-          const task = reminder.relatedId as any
+          let emailResult
 
-          if (user && user.email && task && task.title) {
-            const hoursUntil = Math.ceil(
-              (new Date(task.deadline).getTime() - now.getTime()) / (1000 * 60 * 60)
-            )
-
-            const emailResult = await sendTaskDeadlineReminder(
-              user.email,
-              user.name || 'User',
-              task.title,
-              task.deadline,
-              Math.max(0, hoursUntil)
-            )
-
-            if (emailResult.success) {
-              reminder.emailSent = true
-              sent++
-            } else {
-              failed++
+          switch (reminder.relatedTo) {
+            case 'task': {
+              const Task = await import('@/models/Task')
+              const task = await Task.default.findById(reminder.relatedId)
+              if (task) {
+                const hoursUntil = Math.ceil(
+                  (new Date(task.deadline).getTime() - now.getTime()) / (1000 * 60 * 60)
+                )
+                emailResult = await sendTaskDeadlineReminder(
+                  user.email,
+                  user.name || 'User',
+                  task.title,
+                  task.deadline,
+                  Math.max(0, hoursUntil),
+                  reminder.message
+                )
+              }
+              break
             }
+            case 'exam': {
+              const { Exam } = await import('@/models/College')
+              const exam = await Exam.findById(reminder.relatedId).populate('subject')
+              if (exam) {
+                const hoursUntil = Math.ceil(
+                  (new Date(exam.date).getTime() - now.getTime()) / (1000 * 60 * 60)
+                )
+                const subjectName = (exam as any).subject?.name || 'Subject'
+                emailResult = await sendExamReminder(
+                  user.email,
+                  user.name || 'User',
+                  exam.examType,
+                  subjectName,
+                  exam.date,
+                  Math.max(0, hoursUntil),
+                  reminder.message
+                )
+              }
+              break
+            }
+            case 'assignment': {
+              const { Assignment } = await import('@/models/College')
+              const assignment = await Assignment.findById(reminder.relatedId).populate('subject')
+              if (assignment) {
+                const hoursUntil = Math.ceil(
+                  (new Date(assignment.dueDate).getTime() - now.getTime()) / (1000 * 60 * 60)
+                )
+                const subjectName = (assignment as any).subject?.name || 'Subject'
+                emailResult = await sendAssignmentReminder(
+                  user.email,
+                  user.name || 'User',
+                  assignment.title,
+                  subjectName,
+                  assignment.dueDate,
+                  Math.max(0, hoursUntil),
+                  reminder.message
+                )
+              }
+              break
+            }
+            case 'habit': {
+              const Habit = await import('@/models/Habit')
+              const habit = await Habit.default.findById(reminder.relatedId)
+              if (habit) {
+                emailResult = await sendDailyHabitReminder(
+                  user.email,
+                  user.name || 'User',
+                  [habit.name],
+                  reminder.message
+                )
+
+                // Create next day's reminder for recurring habits
+                if (habit.reminderConfigs && habit.reminderConfigs.length > 0) {
+                  const config = habit.reminderConfigs[0] // Use first reminder config
+                  if (config.enabled && config.reminderTime) {
+                    const [hours, minutes] = config.reminderTime.split(':').map(Number)
+                    const nextTriggerTime = new Date()
+                    nextTriggerTime.setDate(nextTriggerTime.getDate() + 1)
+                    nextTriggerTime.setHours(hours, minutes, 0, 0)
+
+                    await Reminder.create({
+                      user: habit.user,
+                      title: `Habit Reminder: "${habit.name}"`,
+                      message: config.message || `Time to complete your habit: "${habit.name}"`,
+                      relatedTo: 'habit',
+                      relatedId: habit._id,
+                      triggerTime: nextTriggerTime,
+                      isSent: false,
+                      channel: config.notificationType,
+                    })
+                  }
+                }
+              }
+              break
+            }
+            case 'event': {
+              const TimeBlock = await import('@/models/TimeBlock')
+              const timeBlock = await TimeBlock.default.findById(reminder.relatedId)
+              if (timeBlock) {
+                emailResult = await sendTimeBlockNotification(
+                  user.email,
+                  user.name || 'User',
+                  timeBlock.title,
+                  timeBlock.startTime,
+                  timeBlock.date,
+                  reminder.message
+                )
+              }
+              break
+            }
+            case 'custom': {
+              // Check if it's a content idea or subject reminder
+              const ContentIdea = await import('@/models/ContentIdea')
+              const content = await ContentIdea.default.findById(reminder.relatedId)
+              if (content && content.scheduledDate) {
+                emailResult = await sendScheduledContentReminder(
+                  user.email,
+                  user.name || 'User',
+                  content.title,
+                  content.platform,
+                  content.scheduledDate,
+                  reminder.message
+                )
+                break
+              }
+
+              const { Subject } = await import('@/models/College')
+              const subject = await Subject.findById(reminder.relatedId)
+              if (subject) {
+                emailResult = await sendCustomEventReminder(
+                  user.email,
+                  user.name || 'User',
+                  reminder.title,
+                  reminder.triggerTime,
+                  reminder.message
+                )
+                break
+              }
+
+              // Fallback to generic custom reminder
+              emailResult = await sendCustomEventReminder(
+                user.email,
+                user.name || 'User',
+                reminder.title,
+                reminder.triggerTime,
+                reminder.message
+              )
+              break
+            }
+            default: {
+              // Generic reminder
+              emailResult = await sendCustomEventReminder(
+                user.email,
+                user.name || 'User',
+                reminder.title,
+                reminder.triggerTime
+              )
+              break
+            }
+          }
+
+          if (emailResult && emailResult.success) {
+            reminder.emailSent = true
+            sent++
+          } else {
+            failed++
+          }
+        }
+
+        // Create in-app notification if channel includes in-app
+        console.log(`Reminder channel: ${reminder.channel}, creating notification: ${reminder.channel === 'in-app' || reminder.channel === 'both'}`)
+        if (reminder.channel === 'in-app' || reminder.channel === 'both') {
+          try {
+            await Notification.create({
+              user: reminder.user,
+              title: reminder.title,
+              message: reminder.message || 'You have a new reminder.',
+              type: 'info',
+              scheduledFor: now,
+              isRead: false,
+            })
+            console.log(`Successfully created in-app notification for reminder ${reminder._id}`)
+          } catch (notifError) {
+            console.error('Failed to create in-app notification:', notifError)
           }
         }
 
@@ -203,7 +484,8 @@ export async function deleteTaskReminders(taskId: string): Promise<void> {
  * Create reminders for an assignment
  */
 export async function createAssignmentReminders(
-  assignmentId: string
+  assignmentId: string,
+  reminderConfigs?: IReminderConfig[]
 ): Promise<void> {
   try {
     await dbConnect()
@@ -211,21 +493,22 @@ export async function createAssignmentReminders(
     const assignment = await Assignment.findById(assignmentId).populate('subject')
     if (!assignment) return
 
-    const defaultConfigs = [
-      { enabled: true, timeBefore: 1440, notificationType: 'both' as const }, // 1 day
-      { enabled: true, timeBefore: 120, notificationType: 'both' as const },  // 2 hours
-    ]
+    const configs = reminderConfigs || assignment.reminderConfigs
+    if (!configs || configs.length === 0) return
 
-    assignment.reminderConfigs = defaultConfigs
+    assignment.reminderConfigs = configs.filter((config) => config.enabled)
     await assignment.save()
 
-    for (const config of defaultConfigs) {
-      const triggerTime = new Date(assignment.dueDate.getTime() - config.timeBefore * 60 * 1000)
+    for (const config of configs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
       if (triggerTime > new Date()) {
         const subjectName = (assignment.subject as any)?.name || 'Subject'
         await Reminder.create({
           user: assignment.user,
-          title: `Assignment Alert: "${assignment.title}" (${subjectName}) is due soon!`,
+          title: `Assignment Alert: "${assignment.title}" (${subjectName})`,
+          message: config.message || `Assignment "${assignment.title}" is due soon!`,
           relatedTo: 'assignment',
           relatedId: assignment._id,
           triggerTime,
@@ -255,7 +538,8 @@ export async function deleteAssignmentReminders(assignmentId: string): Promise<v
  * Create reminders for an exam
  */
 export async function createExamReminders(
-  examId: string
+  examId: string,
+  reminderConfigs?: IReminderConfig[]
 ): Promise<void> {
   try {
     await dbConnect()
@@ -263,21 +547,22 @@ export async function createExamReminders(
     const exam = await Exam.findById(examId).populate('subject')
     if (!exam) return
 
-    const defaultConfigs = [
-      { enabled: true, timeBefore: 1440, notificationType: 'both' as const }, // 1 day
-      { enabled: true, timeBefore: 120, notificationType: 'both' as const },  // 2 hours
-    ]
+    const configs = reminderConfigs || exam.reminderConfigs
+    if (!configs || configs.length === 0) return
 
-    exam.reminderConfigs = defaultConfigs
+    exam.reminderConfigs = configs.filter((config) => config.enabled)
     await exam.save()
 
-    for (const config of defaultConfigs) {
-      const triggerTime = new Date(exam.date.getTime() - config.timeBefore * 60 * 1000)
+    for (const config of configs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
       if (triggerTime > new Date()) {
         const subjectName = (exam.subject as any)?.name || 'Subject'
         await Reminder.create({
           user: exam.user,
-          title: `Exam Alert: "${exam.examType} Exam" (${subjectName}) is scheduled soon!`,
+          title: `Exam Alert: "${exam.examType} Exam" (${subjectName})`,
+          message: config.message || `Exam "${exam.examType}" is scheduled soon!`,
           relatedTo: 'exam',
           relatedId: exam._id,
           triggerTime,
@@ -300,6 +585,286 @@ export async function deleteExamReminders(examId: string): Promise<void> {
     await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(examId) })
   } catch (error) {
     console.error('Delete Exam Reminders Error:', error)
+  }
+}
+
+/**
+ * Create reminders for a habit (recurring daily at specified time)
+ */
+export async function createHabitReminders(
+  habitId: string,
+  reminderConfigs?: IRecurringReminderConfig[]
+): Promise<void> {
+  try {
+    await dbConnect()
+    const { Habit } = await import('@/models/Habit')
+    const habit = await Habit.findById(habitId)
+    if (!habit) return
+
+    const configs = reminderConfigs || habit.reminderConfigs
+    if (!configs || configs.length === 0) return
+
+    habit.reminderConfigs = configs.filter((config) => config.enabled)
+    await habit.save()
+
+    for (const config of configs) {
+      if (!config.enabled) continue
+
+      // Parse time string (HH:MM) and create reminder for today at that time
+      const [hours, minutes] = config.reminderTime.split(':').map(Number)
+      const now = new Date()
+      const triggerTime = new Date()
+      triggerTime.setHours(hours, minutes, 0, 0)
+
+      // If time has already passed today, set for tomorrow
+      if (triggerTime <= now) {
+        triggerTime.setDate(triggerTime.getDate() + 1)
+      }
+
+      // Check if a reminder already exists for this habit at this time
+      const existingReminder = await Reminder.findOne({
+        relatedTo: 'habit',
+        relatedId: habit._id,
+        triggerTime: {
+          $gte: new Date(triggerTime.setHours(0, 0, 0, 0)),
+          $lt: new Date(triggerTime.setHours(23, 59, 59, 999))
+        }
+      })
+
+      if (!existingReminder) {
+        await Reminder.create({
+          user: habit.user,
+          title: `Habit Reminder: "${habit.name}"`,
+          message: config.message || `Time to complete your habit: "${habit.name}"`,
+          relatedTo: 'habit',
+          relatedId: habit._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Create Habit Reminders Error:', error)
+  }
+}
+
+/**
+ * Delete reminders for a habit
+ */
+export async function deleteHabitReminders(habitId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(habitId) })
+  } catch (error) {
+    console.error('Delete Habit Reminders Error:', error)
+  }
+}
+
+/**
+ * Create reminders for a time block
+ */
+export async function createTimeBlockReminders(
+  timeBlockId: string,
+  reminderConfigs?: IReminderConfig[]
+): Promise<void> {
+  try {
+    await dbConnect()
+    const TimeBlock = await import('@/models/TimeBlock')
+    const timeBlock = await TimeBlock.default.findById(timeBlockId)
+    if (!timeBlock) return
+
+    const configs = reminderConfigs || timeBlock.reminderConfigs
+    if (!configs || configs.length === 0) return
+
+    timeBlock.reminderConfigs = configs.filter((config) => config.enabled)
+    await timeBlock.save()
+
+    for (const config of configs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
+      if (triggerTime > new Date()) {
+        await Reminder.create({
+          user: timeBlock.user,
+          title: `Schedule Reminder: "${timeBlock.title}"`,
+          message: config.message || `Your scheduled activity "${timeBlock.title}" is starting soon`,
+          relatedTo: 'event',
+          relatedId: timeBlock._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Create TimeBlock Reminders Error:', error)
+  }
+}
+
+/**
+ * Delete reminders for a time block
+ */
+export async function deleteTimeBlockReminders(timeBlockId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(timeBlockId) })
+  } catch (error) {
+    console.error('Delete TimeBlock Reminders Error:', error)
+  }
+}
+
+/**
+ * Create reminders for a content idea (release calendar)
+ */
+export async function createContentReminders(
+  contentId: string,
+  reminderConfigs?: IReminderConfig[]
+): Promise<void> {
+  try {
+    await dbConnect()
+    const ContentIdea = await import('@/models/ContentIdea')
+    const content = await ContentIdea.default.findById(contentId)
+    if (!content || !content.scheduledDate) return
+
+    const configs = reminderConfigs || content.reminderConfigs
+    if (!configs || configs.length === 0) return
+
+    content.reminderConfigs = configs.filter((config) => config.enabled)
+    await content.save()
+
+    for (const config of configs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
+      if (triggerTime > new Date()) {
+        await Reminder.create({
+          user: content.user,
+          title: `Content Release: "${content.title}" on ${content.platform}`,
+          message: config.message || `Your content "${content.title}" is scheduled for release`,
+          relatedTo: 'custom',
+          relatedId: content._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Create Content Reminders Error:', error)
+  }
+}
+
+/**
+ * Delete reminders for a content idea
+ */
+export async function deleteContentReminders(contentId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(contentId) })
+  } catch (error) {
+    console.error('Delete Content Reminders Error:', error)
+  }
+}
+
+/**
+ * Create reminders for a subject (daily class log)
+ */
+export async function createSubjectReminders(
+  subjectId: string,
+  reminderConfigs?: IReminderConfig[]
+): Promise<void> {
+  try {
+    await dbConnect()
+    const { Subject } = await import('@/models/College')
+    const subject = await Subject.findById(subjectId)
+    if (!subject) return
+
+    const configs = reminderConfigs || subject.reminderConfigs
+    if (!configs || configs.length === 0) return
+
+    subject.reminderConfigs = configs.filter((config) => config.enabled)
+    await subject.save()
+
+    for (const config of configs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
+      if (triggerTime > new Date()) {
+        await Reminder.create({
+          user: subject.user,
+          title: `Class Reminder: "${subject.name}"`,
+          message: config.message || `Don't forget to log attendance for "${subject.name}"`,
+          relatedTo: 'custom',
+          relatedId: subject._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+  } catch (error) {
+    console.error('Create Subject Reminders Error:', error)
+  }
+}
+
+/**
+ * Delete reminders for a subject
+ */
+export async function deleteSubjectReminders(subjectId: string): Promise<void> {
+  try {
+    await dbConnect()
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(subjectId) })
+  } catch (error) {
+    console.error('Delete Subject Reminders Error:', error)
+  }
+}
+
+/**
+ * Update reminder configurations for a subject
+ */
+export async function updateSubjectReminders(
+  subjectId: string,
+  reminderConfigs: IReminderConfig[]
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  try {
+    await dbConnect()
+    const { Subject } = await import('@/models/College')
+    const subject = await Subject.findById(subjectId)
+    if (!subject) {
+      return { success: false, error: 'Subject not found' }
+    }
+
+    // Delete existing reminders for this subject
+    await Reminder.deleteMany({ relatedId: new mongoose.Types.ObjectId(subjectId) })
+
+    // Update subject's reminder configs
+    subject.reminderConfigs = reminderConfigs.filter((config) => config.enabled)
+    await subject.save()
+
+    // Create new reminder documents
+    for (const config of reminderConfigs) {
+      if (!config.enabled) continue
+
+      const triggerTime = new Date(config.reminderTime)
+      if (triggerTime > new Date()) {
+        await Reminder.create({
+          user: subject.user,
+          title: `Subject Reminder: "${subject.name}"`,
+          message: config.message || `Don't forget to log attendance for "${subject.name}"`,
+          relatedTo: 'custom',
+          relatedId: subject._id,
+          triggerTime,
+          isSent: false,
+          channel: config.notificationType,
+        })
+      }
+    }
+
+    return { success: true, message: 'Subject reminders updated successfully' }
+  } catch (error: any) {
+    console.error('Update Subject Reminders Error:', error)
+    return { success: false, error: error.message || 'Failed to update subject reminders' }
   }
 }
 

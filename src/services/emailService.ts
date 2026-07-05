@@ -98,7 +98,7 @@ export async function sendResetPasswordEmail(email: string, name: string, token:
 
 // ==================== TIME-BASED NOTIFICATIONS ====================
 
-export async function sendTaskDeadlineReminder(email: string, name: string, taskTitle: string, deadline: Date, hoursUntil: number) {
+export async function sendTaskDeadlineReminder(email: string, name: string, taskTitle: string, deadline: Date, hoursUntil: number, customMessage?: string) {
   const formattedDeadline = new Date(deadline).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -121,6 +121,7 @@ export async function sendTaskDeadlineReminder(email: string, name: string, task
           <p style="margin: 10px 0 0 0; color: #92400e;">📅 Due: ${formattedDeadline}</p>
           <p style="margin: 5px 0 0 0; color: #92400e;">⏱️ Time remaining: ${hoursUntil} hours</p>
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #fef3c7; border-radius: 4px; color: #92400e;">💬 ${customMessage}</p>` : ''}
         <p>Don't miss this deadline! Complete your task now to stay on track with your goals.</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard/tasks" style="background-color: #f59e0b; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Task</a>
@@ -134,7 +135,7 @@ export async function sendTaskDeadlineReminder(email: string, name: string, task
   return sendEmailSafely(mailOptions)
 }
 
-export async function sendScheduledContentReminder(email: string, name: string, contentTitle: string, platform: string, scheduledDate: Date) {
+export async function sendScheduledContentReminder(email: string, name: string, contentTitle: string, platform: string, scheduledDate: Date, customMessage?: string) {
   const formattedDate = new Date(scheduledDate).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -157,6 +158,7 @@ export async function sendScheduledContentReminder(email: string, name: string, 
           <p style="margin: 10px 0 0 0; color: #065f46;">📱 Platform: ${platform}</p>
           <p style="margin: 5px 0 0 0; color: #065f46;">📅 Scheduled: ${formattedDate}</p>
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #d1fae5; border-radius: 4px; color: #065f46;">💬 ${customMessage}</p>` : ''}
         <p>Review your content one more time before posting. Your audience is waiting for your next great piece!</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard/content" style="background-color: #10b981; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Review Content</a>
@@ -170,7 +172,7 @@ export async function sendScheduledContentReminder(email: string, name: string, 
   return sendEmailSafely(mailOptions)
 }
 
-export async function sendTimeBlockNotification(email: string, name: string, activityTitle: string, startTime: string, date: string) {
+export async function sendTimeBlockNotification(email: string, name: string, activityTitle: string, startTime: string, date: string, customMessage?: string) {
   const mailOptions = {
     from: `"Solo Leveling Time Planner" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
     to: email,
@@ -185,6 +187,7 @@ export async function sendTimeBlockNotification(email: string, name: string, act
           <p style="margin: 10px 0 0 0; color: #5b21b6;">🕐 Time: ${startTime}</p>
           <p style="margin: 5px 0 0 0; color: #5b21b6;">📅 Date: ${date}</p>
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #ede9fe; border-radius: 4px; color: #5b21b6;">💬 ${customMessage}</p>` : ''}
         <p>It's time to focus and make the most of your scheduled time block. Block all distractions and dive in!</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard" style="background-color: #8b5cf6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Open Dashboard</a>
@@ -198,7 +201,7 @@ export async function sendTimeBlockNotification(email: string, name: string, act
   return sendEmailSafely(mailOptions)
 }
 
-export async function sendDailyHabitReminder(email: string, name: string, habitNames: string[]) {
+export async function sendDailyHabitReminder(email: string, name: string, habitNames: string[], customMessage?: string) {
   const habitList = habitNames.map((h) => `<li style="margin: 8px 0;">${h}</li>`).join('')
 
   const mailOptions = {
@@ -216,6 +219,7 @@ export async function sendDailyHabitReminder(email: string, name: string, habitN
             ${habitList}
           </ul>
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #cffafe; border-radius: 4px; color: #164e63;">💬 ${customMessage}</p>` : ''}
         <p>Every day you complete these habits gets you one step closer to mastery. Keep leveling up! 💪</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard/habits" style="background-color: #06b6d4; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Check In Habits</a>
@@ -265,7 +269,7 @@ export async function sendInvoiceDueReminder(email: string, name: string, invoic
 
 // ==================== EXAM & ASSIGNMENT REMINDERS ====================
 
-export async function sendExamReminder(email: string, name: string, examType: string, subject: string, examDate: Date, hoursUntil: number) {
+export async function sendExamReminder(email: string, name: string, examType: string, subject: string, examDate: Date, hoursUntil: number, customMessage?: string) {
   const formattedDate = new Date(examDate).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -288,6 +292,7 @@ export async function sendExamReminder(email: string, name: string, examType: st
           <p style="margin: 10px 0 0 0; color: #581c87;">📅 Date & Time: ${formattedDate}</p>
           <p style="margin: 5px 0 0 0; color: #581c87;">⏱️ Time remaining: ${hoursUntil} hours</p>
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #ede9fe; border-radius: 4px; color: #581c87;">💬 ${customMessage}</p>` : ''}
         <p>Make sure you're prepared with all your study materials. Good luck with your exam! 🍀</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard/college" style="background-color: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Exam Details</a>
@@ -301,7 +306,7 @@ export async function sendExamReminder(email: string, name: string, examType: st
   return sendEmailSafely(mailOptions)
 }
 
-export async function sendAssignmentReminder(email: string, name: string, assignmentTitle: string, subject: string, dueDate: Date, hoursUntil: number) {
+export async function sendAssignmentReminder(email: string, name: string, assignmentTitle: string, subject: string, dueDate: Date, hoursUntil: number, customMessage?: string) {
   const formattedDate = new Date(dueDate).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -325,6 +330,7 @@ export async function sendAssignmentReminder(email: string, name: string, assign
           <p style="margin: 5px 0 0 0; color: #164e63;">📅 Due: ${formattedDate}</p>
           <p style="margin: 5px 0 0 0; color: #164e63;">⏱️ Time remaining: ${hoursUntil} hours</p>
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #cffafe; border-radius: 4px; color: #164e63;">💬 ${customMessage}</p>` : ''}
         <p>Don't miss this deadline! Complete and submit your assignment now to maintain your grades.</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard/college" style="background-color: #0891b2; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Assignment</a>
@@ -340,7 +346,7 @@ export async function sendAssignmentReminder(email: string, name: string, assign
 
 // ==================== EVENT/DEADLINE REMINDERS ====================
 
-export async function sendCustomEventReminder(email: string, name: string, eventTitle: string, eventTime: Date, description?: string) {
+export async function sendCustomEventReminder(email: string, name: string, eventTitle: string, eventTime: Date, description?: string, customMessage?: string) {
   const formattedTime = new Date(eventTime).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -363,6 +369,7 @@ export async function sendCustomEventReminder(email: string, name: string, event
           <p style="margin: 10px 0 0 0; color: #1e40af;">📅 Time: ${formattedTime}</p>
           ${description ? `<p style="margin: 5px 0 0 0; color: #1e40af;">📝 Details: ${description}</p>` : ''}
         </div>
+        ${customMessage ? `<p style="margin: 15px 0; padding: 10px; background-color: #dbeafe; border-radius: 4px; color: #1e40af;">💬 ${customMessage}</p>` : ''}
         <p>Make sure you're ready for this event. Mark it on your calendar!</p>
         <div style="text-align: center; margin: 30px 0;">
           <a href="${siteUrl}/dashboard" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Calendar</a>

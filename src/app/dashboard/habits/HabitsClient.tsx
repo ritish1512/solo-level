@@ -6,8 +6,10 @@ import { Plus, Trash2, Flame, Award, Check } from 'lucide-react'
 import { HABIT_RECURRENCE_DAYS, HABIT_RECURRENCE_LABELS, isHabitDueForDate, getHabitRecurrenceLabel, formatLocalDate, type HabitRecurrenceType } from '@/lib/habitRecurrence'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { Label } from '@/components/ui/Label'
 import { Card, CardContent } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
+import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
 import { createHabitAction, getHabitsAction, toggleHabitDateAction, deleteHabitAction } from '@/actions/habitActions'
 
 interface HabitsClientProps {
@@ -23,6 +25,7 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
   const [newHabitName, setNewHabitName] = useState('')
   const [recurrenceType, setRecurrenceType] = useState<HabitRecurrenceType>('daily')
   const [selectedDays, setSelectedDays] = useState<string[]>([])
+  const [reminderConfigs, setReminderConfigs] = useState<Array<{ enabled: boolean; reminderTime: string; message?: string; notificationType: 'email' | 'in-app' | 'both' }>>([])
 
   const todayStr = formatLocalDate(new Date())
 
@@ -37,7 +40,7 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
         days: recurrenceType === 'custom-days' ? selectedDays : [],
       }
 
-      const res = await createHabitAction(newHabitName, recurrence)
+      const res = await createHabitAction(newHabitName, recurrence, reminderConfigs.filter((r) => r.enabled))
       if (res.success) {
         toast(res.message || 'Habit created!', 'success')
         // prefer server-returned habit shape (with normalized recurrence fields)
@@ -45,6 +48,7 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
         setNewHabitName('')
         setRecurrenceType('daily')
         setSelectedDays([])
+        setReminderConfigs([])
       } else {
         toast(res.error || 'Failed to create habit', 'error')
       }
@@ -200,6 +204,7 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
                     key={option}
                     type="button"
                     onClick={() => setRecurrenceType(option)}
+                    suppressHydrationWarning
                     className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${recurrenceType === option ? 'bg-indigo-500 text-white' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'}`}
                   >
                     {HABIT_RECURRENCE_LABELS[option]}
@@ -221,6 +226,17 @@ export default function HabitsClient({ initialHabits }: HabitsClientProps) {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">Daily Reminders</Label>
+              <ReminderConfigPanel
+                configs={reminderConfigs}
+                onConfigsChange={setReminderConfigs}
+                timeOnly={true}
+                title="Daily Habit Reminders"
+                description="Set a specific time for daily habit reminders"
+              />
             </div>
           </form>
         </CardContent>

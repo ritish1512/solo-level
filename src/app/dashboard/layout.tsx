@@ -1,11 +1,18 @@
 import React from 'react'
-import Link from 'next/link'
 import type { Metadata } from 'next'
 import { auth } from '@/lib/auth'
 import { redirect } from 'next/navigation'
-import { Bell } from 'lucide-react'
-import Sidebar from '@/components/dashboard/Sidebar'
-import NotificationBell from '@/components/dashboard/NotificationBell'
+import dynamic from 'next/dynamic'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+
+const Sidebar = dynamic(() => import('@/components/dashboard/Sidebar'), { 
+  ssr: true,
+  loading: () => <div className="w-64 border-r border-border bg-card animate-pulse" />
+})
+const NotificationBell = dynamic(() => import('@/components/dashboard/NotificationBell'), {
+  ssr: false,
+  loading: () => <div className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-800 animate-pulse" />
+})
 
 export const metadata: Metadata = {
   title: 'Dashboard',
@@ -51,7 +58,7 @@ export default async function DashboardLayout({
               </div>
             </div>
           </div>
-          {children}
+          <ErrorBoundary>{children}</ErrorBoundary>
         </main>
       </div>
     </div>

@@ -6,6 +6,7 @@ import dbConnect from '@/lib/mongodb'
 import Project from '@/models/Project'
 import Bug from '@/models/Bug'
 import Task from '@/models/Task'
+import { generateAutoReminders, createProjectReminders } from '@/services/reminderService'
 
 export interface ProjectResponse {
   success: boolean
@@ -31,7 +32,7 @@ async function checkAuth() {
 export async function createProjectAction(data: any): Promise<ProjectResponse> {
   try {
     const session = await checkAuth()
-    const { title, description, githubLink, demoLink, deploymentLink, techStack, screenshots, notes } = data
+    const { title, description, githubLink, demoLink, deploymentLink, techStack, screenshots, notes, deadline } = data
 
     if (!title) {
       return { success: false, error: 'Project title is required.' }
@@ -39,6 +40,7 @@ export async function createProjectAction(data: any): Promise<ProjectResponse> {
 
     await dbConnect()
 
+    const deadlineDate = deadline ? new Date(deadline) : undefined
     const newProject = await Project.create({
       user: new mongoose.Types.ObjectId(session.user.id),
       title: title.trim(),
@@ -49,11 +51,20 @@ export async function createProjectAction(data: any): Promise<ProjectResponse> {
       techStack: techStack || [],
       screenshots: screenshots || [],
       notes,
+      deadline: deadlineDate,
     })
+
+    // Generate automatic reminders if deadline is provided
+    if (deadlineDate) {
+      const autoReminders = generateAutoReminders(deadlineDate, 'assignment') // Use 'assignment' type for projects
+      if (autoReminders.length > 0) {
+        await createProjectReminders(newProject._id.toString(), autoReminders)
+      }
+    }
 
     return {
       success: true,
-      message: 'Project created successfully!',
+      message: deadlineDate ? 'Project created! You\'ll receive automatic reminders 1 week before, 1 day before, and on the deadline.' : 'Project created successfully!',
       project: JSON.parse(JSON.stringify(newProject)),
     }
   } catch (error: any) {

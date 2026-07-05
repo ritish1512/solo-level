@@ -5,6 +5,7 @@ import dbConnect from '@/lib/mongodb'
 import Habit, { IHabit } from '@/models/Habit'
 import User from '@/models/User'
 import { getHabitDueDatesBetween, HabitRecurrence, formatLocalDate, isHabitDueForDate, normalizeHabitRecurrence, parseLocalDate } from '@/lib/habitRecurrence'
+import { createHabitReminders, deleteHabitReminders } from '@/services/reminderService'
 
 export interface HabitResponse {
   success: boolean
@@ -75,7 +76,8 @@ export async function calculateStreak(
 
 export async function createHabitAction(
   name: string,
-  recurrence?: { type?: string; days?: string[] } | null
+  recurrence?: { type?: string; days?: string[] } | null,
+  reminderConfigs?: any[]
 ): Promise<HabitResponse> {
   try {
     const session = await checkAuth()
@@ -110,7 +112,15 @@ export async function createHabitAction(
       completedDates: [],
       streak: 0,
       longestStreak: 0,
+      reminderConfigs: reminderConfigs && reminderConfigs.length > 0 ? reminderConfigs : [],
     })
+
+    // Create reminder documents if reminder configs provided
+    if (reminderConfigs && reminderConfigs.length > 0) {
+      // Pass reminderConfigs directly (time strings for recurring habits)
+      await createHabitReminders(newHabit._id.toString(), reminderConfigs)
+    }
+
     const habitObj: any = JSON.parse(JSON.stringify(newHabit))
     // Ensure response includes normalized recurrence flat fields for clients
     habitObj.recurrence = normalizedRecurrence
@@ -263,6 +273,9 @@ export async function deleteHabitAction(id: string): Promise<HabitResponse> {
     if (!habit) {
       return { success: false, error: 'Habit not found.' }
     }
+
+    // Delete associated reminders
+    await deleteHabitReminders(id)
 
     await habit.deleteOne()
 

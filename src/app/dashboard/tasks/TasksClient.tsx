@@ -16,9 +16,7 @@ import {
   ArrowRight,
   ArrowLeft,
   ChevronRight,
-  Bell,
-  Mail,
-  Trash
+  Bell
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -31,7 +29,7 @@ import {
   deleteTaskAction, 
   updateTaskStatusAction 
 } from '@/actions/taskActions'
-import { getReminderPresets, formatMinutesToTime } from '@/lib/reminderUtils'
+import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
 
 interface TasksClientProps {
   initialTasks: any[]
@@ -94,6 +92,8 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
   // Modal & Form States
   const [showAddModal, setShowAddModal] = useState(false)
   const [selectedTask, setSelectedTask] = useState<any | null>(null)
+  const [showReminderModal, setShowReminderModal] = useState(false)
+  const [selectedTaskForReminder, setSelectedTaskForReminder] = useState<any>(null)
   
   const [formData, setFormData] = useState({
     title: '',
@@ -101,18 +101,14 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
     category: 'Personal',
     priority: 'Medium',
     difficulty: 'Medium',
-    energyRequired: 'Medium',
     deadline: formatLocalDateTime(new Date()),
     estimatedTime: '',
     tags: '',
     notes: '',
-    reminderOffset: '0',
   })
 
   // Reminder configurations state
-  const [reminderConfigs, setReminderConfigs] = useState<Array<{ enabled: boolean; timeBefore: number; notificationType: 'email' | 'in-app' | 'both' }>>([])
-  const [showAddReminder, setShowAddReminder] = useState(false)
-  const [newReminderTime, setNewReminderTime] = useState('30')
+  const [reminderConfigs, setReminderConfigs] = useState<Array<{ enabled: boolean; reminderTime: string; message?: string; notificationType: 'email' | 'in-app' | 'both' }>>([])
 
   // Filter States
   const [searchQuery, setSearchQuery] = useState('')
@@ -256,12 +252,10 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       category: task.category,
       priority: task.priority,
       difficulty: task.difficulty,
-      energyRequired: task.energyRequired,
       deadline: Number.isNaN(deadlineDate.getTime()) ? formatLocalDateTime(new Date()) : formatLocalDateTime(deadlineDate),
       estimatedTime: task.estimatedTime?.toString() || '',
       tags: task.tags?.join(', ') || '',
       notes: task.notes || '',
-      reminderOffset: task.reminderOffset?.toString() || '0',
     })
     // Load existing reminder configs
     setReminderConfigs(task.reminderConfigs || [])
@@ -274,39 +268,12 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
       category: 'Personal',
       priority: 'Medium',
       difficulty: 'Medium',
-      energyRequired: 'Medium',
       deadline: formatLocalDateTime(new Date()),
       estimatedTime: '',
       tags: '',
       notes: '',
-      reminderOffset: '0',
     })
     setReminderConfigs([])
-    setShowAddReminder(false)
-  }
-
-  const addReminder = () => {
-    const minutes = parseInt(newReminderTime)
-    if (!isNaN(minutes) && minutes > 0) {
-      setReminderConfigs((prev) => [
-        ...prev,
-        { enabled: true, timeBefore: minutes, notificationType: 'both' },
-      ])
-      setNewReminderTime('30')
-      setShowAddReminder(false)
-    }
-  }
-
-  const removeReminder = (index: number) => {
-    setReminderConfigs((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const toggleReminderNotificationType = (index: number, type: 'email' | 'in-app' | 'both') => {
-    setReminderConfigs((prev) => [
-      ...prev.slice(0, index),
-      { ...prev[index], notificationType: type },
-      ...prev.slice(index + 1),
-    ])
   }
 
   // Filtering Logic
@@ -425,15 +392,28 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                             {task.category}
                           </span>
 
-                          <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
-                            task.priority === 'High'
-                              ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
-                              : task.priority === 'Medium'
-                              ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                              : 'bg-zinc-500/10 text-zinc-500 border border-zinc-200 dark:border-zinc-800'
-                          }`}>
-                            {task.priority}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <Button
+                              onClick={() => {
+                                setSelectedTaskForReminder(task)
+                                setShowReminderModal(true)
+                              }}
+                              size="sm"
+                              variant="ghost"
+                              className="text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20 p-1 h-6 w-6"
+                            >
+                              <Bell className="h-3.5 w-3.5" />
+                            </Button>
+                            <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded ${
+                              task.priority === 'High'
+                                ? 'bg-rose-500/10 text-rose-500 border border-rose-500/20'
+                                : task.priority === 'Medium'
+                                ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                                : 'bg-zinc-500/10 text-zinc-500 border border-zinc-200 dark:border-zinc-800'
+                            }`}>
+                              {task.priority}
+                            </span>
+                          </div>
                         </div>
 
                         {/* Title & Description */}
@@ -497,7 +477,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
               initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl p-6 relative my-8"
+              className="w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl p-6 relative my-8 mt-120 md:mt-50"
             >
               {/* Close Button */}
               <button
@@ -508,7 +488,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                 }}
                 className="absolute right-4 top-4 p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors cursor-pointer"
               >
-                <X className="w-5 h-5" />
+                <X className="w-5 h-5 text-white" />
               </button>
 
               <h2 className="text-xl font-bold mb-4">
@@ -589,32 +569,36 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                     </select>
                   </div>
 
-                  <div className="space-y-1">
-                    <Label htmlFor="taskEnergy">Energy Required</Label>
-                    <select
-                      id="taskEnergy"
-                      value={formData.energyRequired}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, energyRequired: e.target.value }))}
-                      className="flex h-10 w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                    </select>
-                  </div>
                 </div>
 
                 {/* Deadline & Estimated Minutes */}
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label htmlFor="taskDeadline">Deadline Date</Label>
-                    <Input
-                      id="taskDeadline"
-                      type="datetime-local"
-                      value={formData.deadline}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, deadline: e.target.value }))}
-                      required
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        id="taskDeadline"
+                        type="datetime-local"
+                        value={formData.deadline}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, deadline: e.target.value }))}
+                        required
+                        className="flex-1"
+                      />
+                      {formData.deadline && (
+                        <Button
+                          type="button"
+                          onClick={() => {
+                            setSelectedTaskForReminder(selectedTask || { ...formData, _id: 'temp' })
+                            setShowReminderModal(true)
+                          }}
+                          variant="outline"
+                          size="sm"
+                          className="h-10 w-10 flex items-center justify-center text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/20"
+                        >
+                          <Bell className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-1">
@@ -629,142 +613,16 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                   </div>
                 </div>
 
-                {/* Tags (comma separated) & Reminder offset (email alerts) */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="taskTags">Tags (comma separated)</Label>
-                    <Input
-                      id="taskTags"
-                      type="text"
-                      placeholder="coding, dsa, design"
-                      value={formData.tags}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <Label htmlFor="taskReminder">Quick Reminder</Label>
-                    <select
-                      id="taskReminder"
-                      value={formData.reminderOffset}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, reminderOffset: e.target.value }))}
-                      className="flex h-10 w-full rounded-md border border-border bg-background/70 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      <option value="0">No quick reminder</option>
-                      <option value="10">10 minutes before</option>
-                      <option value="30">30 minutes before</option>
-                      <option value="60">1 hour before</option>
-                      <option value="1440">1 day before</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Advanced Reminder Configuration Section */}
-                <div className="border-t border-border/40 pt-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Bell className="w-4 h-4 text-amber-500" />
-                      <Label className="text-sm font-semibold">Email Reminders</Label>
-                    </div>
-                    {!showAddReminder && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowAddReminder(true)}
-                        className="text-xs"
-                      >
-                        <Plus className="w-3 h-3 mr-1" /> Add Reminder
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* Add New Reminder Form */}
-                  {showAddReminder && (
-                    <div className="p-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 space-y-3">
-                      <div className="flex gap-2">
-                        <div className="flex-1">
-                          <Label htmlFor="reminderMinutes" className="text-xs">Minutes before deadline</Label>
-                          <Input
-                            id="reminderMinutes"
-                            type="number"
-                            min="1"
-                            value={newReminderTime}
-                            onChange={(e) => setNewReminderTime(e.target.value)}
-                            placeholder="e.g., 30"
-                            className="mt-1"
-                          />
-                        </div>
-                        <div className="flex items-end gap-2">
-                          <Button
-                            type="button"
-                            variant="primary"
-                            size="sm"
-                            onClick={addReminder}
-                          >
-                            Add
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowAddReminder(false)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* List of configured reminders */}
-                  {reminderConfigs.length > 0 ? (
-                    <div className="space-y-2">
-                      {reminderConfigs.map((reminder, idx) => (
-                        <div
-                          key={idx}
-                          className="p-3 rounded-lg border border-border bg-background/50 flex items-center justify-between hover:border-amber-300 dark:hover:border-amber-700 transition-colors"
-                        >
-                          <div className="flex items-center gap-3 flex-1">
-                            <Mail className="w-4 h-4 text-amber-500 flex-shrink-0" />
-                            <div className="text-sm">
-                              <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                                {formatMinutesToTime(reminder.timeBefore)}
-                              </p>
-                              <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                                Send {reminder.notificationType} notification
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={reminder.notificationType}
-                              onChange={(e) =>
-                                toggleReminderNotificationType(idx, e.target.value as 'email' | 'in-app' | 'both')
-                              }
-                              className="h-8 text-xs rounded border border-border bg-background px-2 outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                            >
-                              <option value="email">Email Only</option>
-                              <option value="in-app">In-App Only</option>
-                              <option value="both">Both</option>
-                            </select>
-                            <button
-                              type="button"
-                              onClick={() => removeReminder(idx)}
-                              className="p-1 text-zinc-400 hover:text-red-500 transition-colors cursor-pointer"
-                            >
-                              <Trash className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400 italic">
-                      No reminders configured. Add one to get email notifications before the deadline.
-                    </p>
-                  )}
+                {/* Tags (comma separated) */}
+                <div className="space-y-1">
+                  <Label htmlFor="taskTags">Tags (comma separated)</Label>
+                  <Input
+                    id="taskTags"
+                    type="text"
+                    placeholder="coding, dsa, design"
+                    value={formData.tags}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
+                  />
                 </div>
 
                 {/* Footer notes */}
@@ -821,6 +679,73 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Task Reminder Modal */}
+      <AnimatePresence>
+        {showReminderModal && selectedTaskForReminder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="w-full max-w-lg bg-card border border-border rounded-xl p-6 relative max-h-[90vh] overflow-y-auto">
+              <button onClick={() => setShowReminderModal(false)} className="absolute right-4 top-4 text-zinc-400 hover:text-zinc-200"><X className="w-5 h-5" /></button>
+              <h3 className="text-lg font-bold mb-2">Set Reminders for {selectedTaskForReminder.title}</h3>
+              <p className="text-sm text-zinc-500 mb-6">Configure custom reminders for this task</p>
+
+              <ReminderConfigPanel
+                configs={selectedTaskForReminder.reminderConfigs || []}
+                onConfigsChange={(configs) => {
+                  setSelectedTaskForReminder((prev: any) => ({ ...prev, reminderConfigs: configs }))
+                }}
+                title="Task Reminders"
+                description="Set reminder times for this task"
+              />
+
+              <div className="mt-6 flex gap-3">
+                <Button
+                  onClick={async () => {
+                    startTransition(async () => {
+                      const { executeAction } = await import('@/lib/offlineSync')
+                      const res = await executeAction(
+                        'updateTaskAction',
+                        updateTaskAction,
+                        [selectedTaskForReminder._id, {
+                          ...selectedTaskForReminder,
+                          reminderConfigs: selectedTaskForReminder.reminderConfigs
+                        }],
+                        () => ({ success: true })
+                      )
+                      if (res.success) {
+                        toast('Reminders updated successfully!', 'success')
+                        setTasks((prev) =>
+                          prev.map((t) =>
+                            t._id === selectedTaskForReminder._id
+                              ? { ...t, reminderConfigs: selectedTaskForReminder.reminderConfigs }
+                              : t
+                          )
+                        )
+                        setShowReminderModal(false)
+                      } else {
+                        toast(res.error || 'Failed to update reminders', 'error')
+                      }
+                    })
+                  }}
+                  variant="primary"
+                  className="flex-1"
+                  isLoading={isPending}
+                >
+                  Save Reminders
+                </Button>
+                <Button
+                  onClick={() => setShowReminderModal(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
     </div>
   )
 }

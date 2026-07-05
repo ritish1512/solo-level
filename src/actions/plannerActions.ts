@@ -4,6 +4,7 @@ import mongoose from 'mongoose'
 import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import TimeBlock from '@/models/TimeBlock'
+import { createTimeBlockReminders, deleteTimeBlockReminders } from '@/services/reminderService'
 
 export interface PlannerResponse {
   success: boolean
@@ -47,7 +48,7 @@ export async function createTimeBlockAction(data: any): Promise<PlannerResponse>
     const session = await checkAuth()
     await dbConnect()
 
-    const { title, startTime, endTime, date } = data
+    const { title, startTime, endTime, date, reminderConfigs } = data
 
     if (!title || !startTime || !endTime || !date) {
       return { success: false, error: 'Title, start time, end time, and date are required.' }
@@ -64,7 +65,18 @@ export async function createTimeBlockAction(data: any): Promise<PlannerResponse>
       date,
       isCompleted: false,
       position: count,
+      reminderConfigs: reminderConfigs && reminderConfigs.length > 0 ? reminderConfigs : [],
     })
+
+    // Create reminder documents if reminder configs provided
+    if (reminderConfigs && reminderConfigs.length > 0) {
+      // Convert reminderTime strings to Date objects
+      const configsForService = reminderConfigs.map((config: any) => ({
+        ...config,
+        reminderTime: new Date(config.reminderTime),
+      }))
+      await createTimeBlockReminders(newBlock._id.toString(), configsForService)
+    }
 
     return {
       success: true,
@@ -120,6 +132,9 @@ export async function deleteTimeBlockAction(id: string): Promise<PlannerResponse
     }
 
     const { date, position: deletedPosition } = block
+
+    // Delete associated reminders
+    await deleteTimeBlockReminders(id)
 
     await block.deleteOne()
 

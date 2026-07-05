@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose'
+import { IReminderConfig } from './Task'
 
 export interface ITimeBlock extends Document {
   user: mongoose.Types.ObjectId
@@ -8,6 +9,7 @@ export interface ITimeBlock extends Document {
   date: string // "YYYY-MM-DD"
   isCompleted: boolean
   position: number // manual sorting ordering
+  reminderConfigs: IReminderConfig[]
   createdAt: Date
   updatedAt: Date
 }
@@ -43,6 +45,18 @@ const TimeBlockSchema: Schema<ITimeBlock> = new Schema(
     position: {
       type: Number,
       default: 0,
+    },
+    reminderConfigs: {
+      type: [
+        {
+          enabled: { type: Boolean, default: true },
+          reminderTime: { type: Date, required: true }, // Specific date/time
+          message: { type: String, required: false },
+          notificationType: { type: String, enum: ['email', 'in-app', 'both'], default: 'both' },
+          emailSent: { type: Boolean, default: false },
+        },
+      ],
+      default: [],
     },
   },
   {
