@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import dbConnect from '@/lib/mongodb'
+import { processPendingReminders } from '@/services/reminderService'
 import Habit from '@/models/Habit'
 import Invoice from '@/models/Invoice'
 import Project from '@/models/Project'
@@ -9,6 +10,9 @@ import { sendDailyHabitReminder, sendInvoiceDueReminder } from '@/services/email
 export const dynamic = 'force-dynamic'
 
 interface ProcessingResult {
+  remindersProcessed: number
+  remindersSent: number
+  remindersFailed: number
   habitReminders: number
   invoiceReminders: number
   projectReminders: number
@@ -35,6 +39,9 @@ const transporter = hasSmtpCredentials
 
 export async function GET(request: Request) {
   const result: ProcessingResult = {
+    remindersProcessed: 0,
+    remindersSent: 0,
+    remindersFailed: 0,
     habitReminders: 0,
     invoiceReminders: 0,
     projectReminders: 0,
@@ -56,7 +63,13 @@ export async function GET(request: Request) {
     const now = new Date()
     const currentTime = now.getTime()
 
-    // ==================== 1. DAILY HABIT REMINDERS ====================
+    // Process pending reminders using the reminder service (handles new reminderConfigs system)
+    const reminderResult = await processPendingReminders()
+    result.remindersProcessed = reminderResult.processed
+    result.remindersSent = reminderResult.sent
+    result.remindersFailed = reminderResult.failed
+
+    // ==================== 1. DAILY HABIT REMINDERS (Legacy support for users without reminderConfigs) ====================
     try {
       const users = await User.find({})
       const todayStr = now.toISOString().split('T')[0]
@@ -193,6 +206,7 @@ export async function GET(request: Request) {
 
   } catch (error: any) {
     console.error('Morning Cron Error:', error)
+    result.errors.push(error.message || 'Internal Server Error')
     return NextResponse.json(
       { error: error.message || 'Internal Server Error', result },
       { status: 500 }
