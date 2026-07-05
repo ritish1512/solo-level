@@ -162,33 +162,35 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
   }
 
   const handleSave = (event: React.FormEvent) => {
-    event.preventDefault()
+  event.preventDefault()
+  startTransition(async () => {
+    let res;
+    
+    // Call the actions directly so Next.js static analysis reads them clearly
+    if (selectedIdea) {
+      res = await updateContentIdeaAction(selectedIdea._id, form as any);
+    } else {
+      res = await createContentIdeaAction(form as any);
+    }
 
-    startTransition(async () => {
-     const action = selectedIdea
-    ? updateContentIdeaAction(selectedIdea._id, form as Parameters<typeof updateContentIdeaAction>[1])
-    : createContentIdeaAction(form as Parameters<typeof createContentIdeaAction>[0]);
-
-
-
-      const res = await action
-      if (!res.success || !res.idea) {
-        toast(res.error || 'Unable to save content idea.', 'error')
-        return
+    if (!res.success || !res.idea) {
+      toast(res.error || 'Unable to save content idea.', 'error')
+      return
+    }
+    
+    const savedIdea = res.idea as ContentIdea
+    setIdeas((prev) => {
+      if (selectedIdea) {
+        return prev.map((idea) => (idea._id === savedIdea._id ? savedIdea : idea))
       }
-
-      const savedIdea = res.idea as ContentIdea
-      setIdeas((prev) => {
-        if (selectedIdea) {
-          return prev.map((idea) => (idea._id === savedIdea._id ? savedIdea : idea))
-        }
-        return [savedIdea, ...prev]
-      })
-      setSelectedIdea(savedIdea)
-      setForm(ideaToForm(savedIdea))
-      toast(res.message || 'Content idea saved.', 'success')
+      return [savedIdea, ...prev]
     })
-  }
+    setSelectedIdea(savedIdea)
+    setForm(ideaToForm(savedIdea))
+    toast(res.message || 'Content idea saved.', 'success')
+  })
+}
+
 
   const handleDelete = () => {
     if (!selectedIdea) return
