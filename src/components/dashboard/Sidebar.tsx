@@ -119,6 +119,11 @@ export default function Sidebar() {
             <Link
               key={link.name}
               href={link.href}
+              prefetch={
+                link.href === '/dashboard/tasks' || link.href === '/dashboard/projects' || link.href === '/dashboard/content'
+                  ? false
+                  : true
+              }
               onClick={() => setMobileOpen(false)}
               aria-current={isActive ? 'page' : undefined}
               className={`flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${

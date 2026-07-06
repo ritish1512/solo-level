@@ -31,13 +31,19 @@ export function ReminderConfigPanel({
 }: ReminderConfigPanelProps) {
   const [localConfigs, setLocalConfigs] = useState<ReminderConfig[]>(configs)
 
+  React.useEffect(() => {
+    setLocalConfigs(configs)
+  }, [configs])
+
   const handleAddConfig = () => {
     const newConfig: ReminderConfig = {
       enabled: true,
       reminderTime: timeOnly ? '09:00' : (() => {
         const now = new Date()
-        now.setHours(now.getHours() + 1)
-        return now.toISOString().slice(0, 16)
+        now.setHours(now.getHours() + 1, 0, 0, 0)
+        const tzOffset = now.getTimezoneOffset() * 60000
+        const local = new Date(now.getTime() - tzOffset)
+        return local.toISOString().slice(0, 16)
       })(),
       message: '',
       notificationType: 'both',

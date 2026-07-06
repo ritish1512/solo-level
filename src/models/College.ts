@@ -64,6 +64,10 @@ export interface IAssignment extends Document {
   grade?: string
   fileUrl?: string // Cloudinary pdf/image URL
   reminderConfigs: IReminderConfig[] // Email reminder configurations
+  deletionRequested: boolean // Flag when deletion confirmation is requested
+  deletionRequestedAt?: Date // When deletion confirmation was requested
+  deletionConfirmed: boolean // Flag when user confirms deletion
+  deletionConfirmedAt?: Date // When user confirmed deletion
   createdAt: Date
   updatedAt: Date
 }
@@ -90,6 +94,10 @@ const AssignmentSchema: Schema<IAssignment> = new Schema(
       ],
       default: [],
     },
+    deletionRequested: { type: Boolean, default: false },
+    deletionRequestedAt: { type: Date, required: false },
+    deletionConfirmed: { type: Boolean, default: false },
+    deletionConfirmedAt: { type: Date, required: false },
   },
   { timestamps: true }
 )
@@ -103,7 +111,12 @@ export interface IExam extends Document {
   syllabus?: string
   marksObtained?: number
   maxMarks?: number
+  fileUrl?: string // Cloudinary pdf/image URL or reference link
   reminderConfigs: IReminderConfig[] // Email reminder configurations
+  deletionRequested: boolean // Flag when deletion confirmation is requested
+  deletionRequestedAt?: Date // When deletion confirmation was requested
+  deletionConfirmed: boolean // Flag when user confirms deletion
+  deletionConfirmedAt?: Date // When user confirmed deletion
   createdAt: Date
   updatedAt: Date
 }
@@ -117,6 +130,7 @@ const ExamSchema: Schema<IExam> = new Schema(
     syllabus: { type: String, required: false },
     marksObtained: { type: Number, required: false },
     maxMarks: { type: Number, required: false },
+    fileUrl: { type: String, required: false },
     reminderConfigs: {
       type: [
         {
@@ -129,6 +143,10 @@ const ExamSchema: Schema<IExam> = new Schema(
       ],
       default: [],
     },
+    deletionRequested: { type: Boolean, default: false },
+    deletionRequestedAt: { type: Date, required: false },
+    deletionConfirmed: { type: Boolean, default: false },
+    deletionConfirmedAt: { type: Date, required: false },
   },
   { timestamps: true }
 )

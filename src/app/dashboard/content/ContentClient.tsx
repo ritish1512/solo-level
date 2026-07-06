@@ -586,6 +586,15 @@ export default function ContentClient({ initialIdeas }: ContentClientProps) {
                   onClick={async () => {
                     startTransition(async () => {
                       if (!selectedContentForReminder) return
+
+                      // If this is a draft/new content (temp id), persist reminders to the create form
+                      if (selectedContentForReminder._id === 'temp') {
+                        setForm((prev) => ({ ...prev, reminderConfigs: selectedContentForReminder.reminderConfigs || [] }))
+                        toast('Reminder settings saved to draft content.', 'success')
+                        setShowReminderModal(false)
+                        return
+                      }
+
                       const res = await updateContentIdeaAction(selectedContentForReminder._id, {
                         ...selectedContentForReminder,
                         reminderConfigs: selectedContentForReminder.reminderConfigs,

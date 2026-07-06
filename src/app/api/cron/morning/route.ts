@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
 import dbConnect from '@/lib/mongodb'
 import { processPendingReminders } from '@/services/reminderService'
+import runInBackground from '@/lib/cronHelper'
 import Habit from '@/models/Habit'
 import Invoice from '@/models/Invoice'
 import Project from '@/models/Project'
 import User from '@/models/User'
-import { sendDailyHabitReminder, sendInvoiceDueReminder } from '@/services/emailService'
+import Reminder from '@/models/Reminder'
+import { Assignment, Exam } from '@/models/College'
+import { sendDailyHabitReminder, sendInvoiceDueReminder, sendDeletionConfirmationEmail } from '@/services/emailService'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +19,7 @@ interface ProcessingResult {
   habitReminders: number
   invoiceReminders: number
   projectReminders: number
+  deletionRequestsSent: number
   errors: string[]
 }
 
@@ -45,165 +49,231 @@ export async function GET(request: Request) {
     habitReminders: 0,
     invoiceReminders: 0,
     projectReminders: 0,
+    deletionRequestsSent: 0,
     errors: [],
   }
 
   try {
-    // Authorization validation - check bearer token
+    // Authorization validation - accept Bearer or X-Cron-Secret header for compatibility
     const authHeader = request.headers.get('authorization')
+    const headerSecret = request.headers.get('x-cron-secret')
     const serverSecret = process.env.CRON_SECRET
 
-    if (!authHeader || authHeader !== `Bearer ${serverSecret}`) {
+    const isAuthorized = (authHeader && authHeader === `Bearer ${serverSecret}`) || (headerSecret && headerSecret === serverSecret)
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Open secure database connection pool
-    await dbConnect()
+    // Immediately respond to the cron caller and run the heavy work in background
+    const bgTask = async () => {
+      // Open secure database connection pool
+      await dbConnect()
 
-    const now = new Date()
-    const currentTime = now.getTime()
+      const startTime = Date.now()
+      try {
+        const now = new Date()
+        const currentTime = now.getTime()
 
-    // Process pending reminders using the reminder service (handles new reminderConfigs system)
-    const reminderResult = await processPendingReminders()
-    result.remindersProcessed = reminderResult.processed
-    result.remindersSent = reminderResult.sent
-    result.remindersFailed = reminderResult.failed
+        // Process pending reminders using the reminder service (handles new reminderConfigs system)
+        const reminderResult = await processPendingReminders()
+        result.remindersProcessed = reminderResult.processed
+        result.remindersSent = reminderResult.sent
+        result.remindersFailed = reminderResult.failed
 
-    // ==================== 1. DAILY HABIT REMINDERS (Legacy support for users without reminderConfigs) ====================
-    try {
-      const users = await User.find({})
-      const todayStr = now.toISOString().split('T')[0]
+        // ==================== 1. DAILY HABIT REMINDERS (Legacy support for users without reminderConfigs) ====================
+        try {
+          const users = await User.find({}).select('_id email name lastHabitReminderDate').lean()
+          const todayStr = now.toISOString().split('T')[0]
 
-      // Process users concurrently using Promise.all
-      await Promise.all(
-        users.map(async (user) => {
-          try {
-            const habits = await Habit.find({ user: user._id })
-            if (habits.length === 0) return
-
-            const lastEmailDate = user.lastHabitReminderDate ? new Date(user.lastHabitReminderDate) : null
-            const lastEmailDay = lastEmailDate ? lastEmailDate.toISOString().split('T')[0] : null
-
-            if (lastEmailDay === todayStr) return
-
-            const habitNames = habits.map((h) => h.name)
-            await sendDailyHabitReminder(user.email, user.name, habitNames)
-
-            user.lastHabitReminderDate = now
-            await user.save()
-            result.habitReminders++
-          } catch (singleHabitErr: any) {
-            result.errors.push(`Habit user context error (${user.email || user._id}): ${singleHabitErr.message}`)
-          }
-        })
-      )
-    } catch (err: any) {
-      result.errors.push(`Habit reminders error: ${err.message}`)
-    }
-
-    // ==================== 2. INVOICE DUE REMINDERS ====================
-    try {
-      const invoices = await Invoice.find({
-        status: 'Unpaid',
-        reminderSent: false,
-        dueDate: {
-          $lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), // Within 7 days
-          $gte: now,
-        },
-      }).populate('user')
-
-      // Process invoices concurrently using Promise.all
-      await Promise.all(
-        invoices.map(async (invoice) => {
-          try {
-            const user = invoice.user as any
-            if (!user) return
-
-            await sendInvoiceDueReminder(user.email, user.name, invoice.amount, invoice.dueDate!, invoice.clientName)
-            
-            invoice.reminderSent = true
-            await invoice.save()
-            result.invoiceReminders++
-          } catch (singleInvoiceErr: any) {
-            result.errors.push(`Invoice context error (ID ${invoice._id}): ${singleInvoiceErr.message}`)
-          }
-        })
-      )
-    } catch (err: any) {
-      result.errors.push(`Invoice reminders error: ${err.message}`)
-    }
-
-    // ==================== 3. PROJECT DEADLINE REMINDERS ====================
-    try {
-      const projects = await Project.find({
-        deadline: {
-          $lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), // Within 7 days
-          $gte: now,
-        },
-        reminderSent: false,
-      }).populate('user')
-
-      // Process projects concurrently using Promise.all
-      await Promise.all(
-        projects.map(async (project) => {
-          try {
-            const user = project.user as any
-            if (!user) return
-
-            const daysUntil = Math.ceil((new Date(project.deadline!).getTime() - currentTime) / (24 * 60 * 60 * 1000))
-            
-            const mailOptions = {
-              from: `"Solo Leveling Projects" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
-              to: user.email,
-              subject: `🚀 Project Deadline Reminder: ${project.title}`,
-              html: `
-                <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; background-color: #ffffff; color: #333333;">
-                  <h2 style="color: #7c3aed; text-align: center;">🚀 Project Deadline Reminder</h2>
-                  <p>Hello ${user.name},</p>
-                  <p>Your project deadline is approaching:</p>
-                  <div style="background-color: #f5f3ff; padding: 15px; border-left: 4px solid #7c3aed; border-radius: 4px; margin: 20px 0;">
-                    <strong style="font-size: 16px;">${project.title}</strong>
-                    <p style="margin: 10px 0 0 0; color: #5b21b6;">📅 Days remaining: ${daysUntil}</p>
-                  </div>
-                  <p>Ensure your project is on track. Review details in the dashboard.</p>
-                  <div style="text-align: center; margin: 30px 0;">
-                    <a href="${process.env.NEXTAUTH_URL || 'https://sololevelingguider.vercel.app/'}/dashboard/projects" style="background-color: #7c3aed; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">View Projects</a>
-                  </div>
-                  <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
-                  <p style="font-size: 12px; color: #999; text-align: center;">Project deadline reminder from Solo Leveling.</p>
-                </div>
-              `,
-            }
-
-            if (transporter) {
+          await Promise.all(
+            users.map(async (user: any) => {
               try {
-                await transporter.sendMail(mailOptions)
-              } catch (err: any) {
-                console.error(`Failed to send project reminder for ${user.email}:`, err)
-                result.errors.push(`SMTP transfer error (${user.email}): ${err.message}`)
-              }
-            } else {
-              console.log(`--- PROJECT REMINDER FALLBACK --- To: ${user.email} | Project: ${project.title}`)
-            }
+                const habits = await Habit.find({ user: user._id }).select('_id name reminderConfigs').lean()
+                if (habits.length === 0) return
 
-            project.reminderSent = true
-            await project.save()
-            result.projectReminders++
-          } catch (singleProjectErr: any) {
-            result.errors.push(`Project context error (ID ${project._id}): ${singleProjectErr.message}`)
-          }
-        })
-      )
-    } catch (err: any) {
-      result.errors.push(`Project reminders error: ${err.message}`)
+                const hasHabitReminders = habits.some((h: any) => Array.isArray(h.reminderConfigs) && h.reminderConfigs.length > 0)
+                if (hasHabitReminders) return
+
+                const lastEmailDate = user.lastHabitReminderDate ? new Date(user.lastHabitReminderDate) : null
+                const lastEmailDay = lastEmailDate ? lastEmailDate.toISOString().split('T')[0] : null
+
+                if (lastEmailDay === todayStr) return
+
+                const habitNames = habits.map((h: any) => h.name)
+                await sendDailyHabitReminder(user.email, user.name, habitNames)
+
+                // Update user record without needing a full document save
+                await User.updateOne({ _id: user._id }, { $set: { lastHabitReminderDate: now } })
+                result.habitReminders++
+              } catch (singleHabitErr: any) {
+                result.errors.push(`Habit user context error (${user.email || user._id}): ${singleHabitErr.message}`)
+              }
+            })
+          )
+        } catch (err: any) {
+          result.errors.push(`Habit reminders error: ${err.message}`)
+        }
+
+        // ==================== 2. INVOICE DUE REMINDERS ====================
+        try {
+          const invoices = await Invoice.find({
+            status: 'Unpaid',
+            reminderSent: false,
+            dueDate: {
+              $lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+              $gte: now,
+            },
+          }).select('_id user amount dueDate clientName').populate('user', '_id email name').lean()
+
+          await Promise.all(
+            invoices.map(async (invoice: any) => {
+              try {
+                const user = invoice.user as any
+                if (!user) return
+
+                await sendInvoiceDueReminder(user.email, user.name, invoice.amount, invoice.dueDate!, invoice.clientName)
+
+                // Mark as sent via updateOne instead of document.save()
+                await Invoice.updateOne({ _id: invoice._id }, { $set: { reminderSent: true } })
+                result.invoiceReminders++
+              } catch (singleInvoiceErr: any) {
+                result.errors.push(`Invoice context error (ID ${invoice._id}): ${singleInvoiceErr.message}`)
+              }
+            })
+          )
+        } catch (err: any) {
+          result.errors.push(`Invoice reminders error: ${err.message}`)
+        }
+
+        // ==================== 3. PROJECT DEADLINE REMINDERS (legacy pathway) ====================
+        try {
+          const projects = await Project.find({
+            deadline: {
+              $lte: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+              $gte: now,
+            },
+            reminderSent: false,
+          }).select('_id user title deadline').populate('user', '_id email name').lean()
+
+          await Promise.all(
+            projects.map(async (project: any) => {
+              try {
+                const user = project.user as any
+                if (!user || !user.email) return
+
+                const hasProjectReminderDoc = await Reminder.exists({
+                  relatedTo: 'project',
+                  relatedId: project._id,
+                })
+
+                if (hasProjectReminderDoc) {
+                  return
+                }
+
+                const daysUntil = Math.ceil((new Date(project.deadline!).getTime() - currentTime) / (24 * 60 * 60 * 1000))
+
+                const mailOptions = {
+                  from: `"Solo Leveling Projects" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
+                  to: user.email,
+                  subject: `🚀 Project Deadline Reminder: ${project.title}`,
+                  html: `...`,
+                }
+
+                if (transporter) {
+                  try {
+                    await transporter.sendMail(mailOptions)
+                  } catch (err: any) {
+                    console.error(`Failed to send project reminder for ${user.email}:`, err)
+                    result.errors.push(`SMTP transfer error (${user.email}): ${err.message}`)
+                  }
+                } else {
+                  console.log(`--- PROJECT REMINDER FALLBACK --- To: ${user.email} | Project: ${project.title}`)
+                }
+
+                await Project.updateOne({ _id: project._id }, { $set: { reminderSent: true } })
+                result.projectReminders++
+              } catch (singleProjectErr: any) {
+                result.errors.push(`Project context error (ID ${project._id}): ${singleProjectErr.message}`)
+              }
+            })
+          )
+        } catch (err: any) {
+          result.errors.push(`Project reminders error: ${err.message}`)
+        }
+
+        // ==================== 4. COLLEGE DEADLINE COMPLETION CHECKS ====================
+        try {
+          const pastDueAssignments = await Assignment.find({
+            dueDate: { $lt: now },
+            deletionRequested: false,
+            status: { $ne: 'Completed' },
+          }).select('_id user title').populate('user', '_id email name').lean()
+
+          await Promise.all(
+            pastDueAssignments.map(async (assignment: any) => {
+              try {
+                const user = assignment.user as any
+                if (!user || !user.email) return
+
+                await Assignment.updateOne({ _id: assignment._id }, { $set: { deletionRequested: true, deletionRequestedAt: now } })
+
+                await sendDeletionConfirmationEmail(
+                  user.email,
+                  user.name || 'User',
+                  'assignment',
+                  assignment.title,
+                  assignment._id.toString()
+                )
+
+                result.deletionRequestsSent++
+              } catch (singleAssignmentErr: any) {
+                result.errors.push(`Assignment deletion request error (ID ${assignment._id}): ${singleAssignmentErr.message}`)
+              }
+            })
+          )
+
+          const pastDueExams = await Exam.find({
+            date: { $lt: now },
+            deletionRequested: false,
+          }).select('_id user examType').populate('user', '_id email name').lean()
+
+          await Promise.all(
+            pastDueExams.map(async (exam: any) => {
+              try {
+                const user = exam.user as any
+                if (!user || !user.email) return
+
+                await Exam.updateOne({ _id: exam._id }, { $set: { deletionRequested: true, deletionRequestedAt: now } })
+
+                await sendDeletionConfirmationEmail(
+                  user.email,
+                  user.name || 'User',
+                  'exam',
+                  exam.examType,
+                  exam._id.toString()
+                )
+
+                result.deletionRequestsSent++
+              } catch (singleExamErr: any) {
+                result.errors.push(`Exam deletion request error (ID ${exam._id}): ${singleExamErr.message}`)
+              }
+            })
+          )
+        } catch (err: any) {
+          result.errors.push(`College deadline completion check error: ${err.message}`)
+        }
+
+        // Optionally log runtime
+        const duration = Date.now() - startTime
+        console.log(`Morning cron background task completed in ${duration}ms`, result)
+      } catch (err: any) {
+        console.error('Error in morning cron background task:', err)
+      }
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Morning daily notifications processed successfully.',
-      result,
-    })
-
+    // Schedule background task using helper then return immediately
+    runInBackground(bgTask).catch(() => null)
+    return NextResponse.json({ success: true, scheduled: true, message: 'Morning task scheduled.' })
   } catch (error: any) {
     console.error('Morning Cron Error:', error)
     result.errors.push(error.message || 'Internal Server Error')

@@ -6,7 +6,7 @@ import { createHabitAction, toggleHabitDateAction, deleteHabitAction } from '@/a
 import { createTimeBlockAction, updateTimeBlockAction, deleteTimeBlockAction } from '@/actions/plannerActions'
 import { createProjectAction, updateProjectAction, deleteProjectAction } from '@/actions/projectActions'
 import { createNoteAction, updateNoteAction, toggleNotePinAction, toggleNoteArchiveAction, deleteNoteAction } from '@/actions/noteActions'
-import { createSubjectAction, updateSubjectAttendanceAction, logSubjectAttendanceAction, deleteSubjectAction, createAssignmentAction, updateAssignmentStatusAction, deleteAssignmentAction, createExamAction, updateExamAction } from '@/actions/collegeActions'
+import { createSubjectAction, updateSubjectAttendanceAction, logSubjectAttendanceAction, deleteSubjectAction, createAssignmentAction, updateAssignmentAction, updateAssignmentStatusAction, deleteAssignmentAction, createExamAction, updateExamDetailsAction, updateExamAction, deleteExamAction } from '@/actions/collegeActions'
 import { createTransactionAction, updateTransactionAction, deleteTransactionAction, createInvoiceAction, deleteInvoiceAction, markInvoicePaidAction } from '@/actions/financeActions'
 
 // Action Map mapping string names to Server Action functions
@@ -34,10 +34,13 @@ export const ACTION_MAP: Record<string, Function> = {
   logSubjectAttendanceAction,
   deleteSubjectAction,
   createAssignmentAction,
+  updateAssignmentAction,
   updateAssignmentStatusAction,
   deleteAssignmentAction,
   createExamAction,
+  updateExamDetailsAction,
   updateExamAction,
+  deleteExamAction,
   createTransactionAction,
   updateTransactionAction,
   deleteTransactionAction,

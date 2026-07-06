@@ -60,8 +60,8 @@ export async function createContentIdeaAction(data: ContentIdeaPayload): Promise
       reminderConfigs: data.reminderConfigs || [],
     })
 
-    // Generate automatic reminders if scheduled date is provided
-    if (scheduledDate) {
+    // Generate automatic reminders if scheduled date is provided and no custom reminder configs were supplied
+    if (scheduledDate && (!data.reminderConfigs || data.reminderConfigs.length === 0)) {
       const autoReminders = generateAutoReminders(scheduledDate, 'assignment') // Use 'assignment' type for content
       if (autoReminders.length > 0) {
         await createContentReminders(idea._id.toString(), autoReminders)
@@ -118,13 +118,20 @@ export async function updateContentIdeaAction(id: string, data: ContentIdeaPaylo
     // Update reminders if scheduled date or reminder configs changed
     if (data.scheduledDate !== undefined || data.reminderConfigs !== undefined) {
       await deleteContentReminders(id)
-      if (idea.scheduledDate && idea.reminderConfigs && idea.reminderConfigs.length > 0) {
-        // Convert reminderTime strings to Date objects
-        const configsForService = idea.reminderConfigs.map((config: any) => ({
-          ...config,
-          reminderTime: new Date(config.reminderTime),
-        }))
-        await createContentReminders(id, configsForService)
+      if (idea.scheduledDate) {
+        if (idea.reminderConfigs && idea.reminderConfigs.length > 0) {
+          // Convert reminderTime strings to Date objects
+          const configsForService = idea.reminderConfigs.map((config: any) => ({
+            ...config,
+            reminderTime: new Date(config.reminderTime),
+          }))
+          await createContentReminders(id, configsForService)
+        } else {
+          const autoReminders = generateAutoReminders(idea.scheduledDate, 'assignment')
+          if (autoReminders.length > 0) {
+            await createContentReminders(id, autoReminders)
+          }
+        }
       }
     }
 

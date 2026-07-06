@@ -1031,6 +1031,14 @@ export default function ProjectsClient({
                 <Button
                   onClick={async () => {
                     startTransition(async () => {
+                      // If this is a draft/new project (temp id), persist reminders to the create form
+                      if (selectedProjectForReminder && selectedProjectForReminder._id === 'temp') {
+                        setProjectForm((prev) => ({ ...prev, reminderConfigs: selectedProjectForReminder.reminderConfigs || [] }))
+                        toast('Reminder settings saved to draft project.', 'success')
+                        setShowReminderModal(false)
+                        return
+                      }
+
                       const res = await updateProjectAction(selectedProjectForReminder._id, {
                         ...selectedProjectForReminder,
                         reminderConfigs: selectedProjectForReminder.reminderConfigs

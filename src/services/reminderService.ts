@@ -16,6 +16,18 @@ import {
 } from './emailService'
 import { REMINDER_PRESETS } from '@/lib/reminderUtils'
 
+// Normalize reminder times: if a date-only value (00:00:00) is provided,
+// set it to a sensible default time (09:00 local) so reminders don't fire at midnight UTC.
+function normalizeReminderTime(d :any) {
+  if (!d || !(d instanceof Date)) return d
+  // If time is midnight (likely a date-only ISO string), set to 9 AM local
+  if (d.getHours() === 0 && d.getMinutes() === 0 && d.getSeconds() === 0) {
+    d.setHours(9, 0, 0, 0)
+  }
+  return d
+}
+
+
 /**
  * Generate automatic reminder presets for assignments/exams
  * Creates reminders for: 1 week before, 1 day before, and on the day
@@ -83,7 +95,7 @@ export async function createProjectReminders(
     for (const config of reminderConfigs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         await Reminder.create({
           user: project.user,
@@ -140,7 +152,7 @@ export async function createTaskReminders(
     for (const config of reminderConfigs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
 
       // Only create reminder if trigger time is in the future
       if (triggerTime > new Date()) {
@@ -214,14 +226,22 @@ export async function processPendingReminders(): Promise<{
 
       try {
         const user = reminder.user as any
-        if (!user || !user.email) {
+
+        // Track delivery outcomes so we only mark the reminder as sent
+        // when at least one configured channel was successfully delivered.
+        let emailSuccess = false
+        let notifCreated = false
+
+        // If user has no email and the reminder only targets email, skip and leave for retry
+        if (!user) {
+          // No valid user — mark as sent to avoid phantom retries
           reminder.isSent = true
           await reminder.save()
           continue
         }
 
-        // Send email if channel includes email
-        if (reminder.channel === 'email' || reminder.channel === 'both') {
+        // Send email if channel includes email and user has an email
+        if ((reminder.channel === 'email' || reminder.channel === 'both') && user.email) {
           let emailResult
 
           switch (reminder.relatedTo) {
@@ -294,24 +314,28 @@ export async function processPendingReminders(): Promise<{
                   reminder.message
                 )
 
-                // Create next day's reminder for recurring habits
-                if (habit.reminderConfigs && habit.reminderConfigs.length > 0) {
-                  const config = habit.reminderConfigs[0] // Use first reminder config
-                  if (config.enabled && config.reminderTime) {
-                    const [hours, minutes] = config.reminderTime.split(':').map(Number)
-                    const nextTriggerTime = new Date()
+                if (reminder.triggerTime) {
+                  const nextTriggerTime = new Date(reminder.triggerTime)
+                  do {
                     nextTriggerTime.setDate(nextTriggerTime.getDate() + 1)
-                    nextTriggerTime.setHours(hours, minutes, 0, 0)
+                  } while (nextTriggerTime <= now)
 
+                  const existingNextReminder = await Reminder.findOne({
+                    relatedTo: 'habit',
+                    relatedId: habit._id,
+                    triggerTime: nextTriggerTime,
+                  })
+
+                  if (!existingNextReminder) {
                     await Reminder.create({
                       user: habit.user,
                       title: `Habit Reminder: "${habit.name}"`,
-                      message: config.message || `Time to complete your habit: "${habit.name}"`,
+                      message: reminder.message || `Time to complete your habit: "${habit.name}"`,
                       relatedTo: 'habit',
                       relatedId: habit._id,
                       triggerTime: nextTriggerTime,
                       isSent: false,
-                      channel: config.notificationType,
+                      channel: reminder.channel || 'both',
                     })
                   }
                 }
@@ -386,8 +410,10 @@ export async function processPendingReminders(): Promise<{
 
           if (emailResult && emailResult.success) {
             reminder.emailSent = true
+            emailSuccess = true
             sent++
           } else {
+            // keep failed count but do not mark isSent yet so retries are possible
             failed++
           }
         }
@@ -404,15 +430,30 @@ export async function processPendingReminders(): Promise<{
               scheduledFor: now,
               isRead: false,
             })
+            notifCreated = true
             console.log(`Successfully created in-app notification for reminder ${reminder._id}`)
           } catch (notifError) {
             console.error('Failed to create in-app notification:', notifError)
           }
         }
 
-        // Mark reminder as sent
-        reminder.isSent = true
-        await reminder.save()
+        // Decide whether to mark the reminder as sent:
+        // - If channel=email and email succeeded => mark sent
+        // - If channel=in-app and notification created => mark sent
+        // - If channel=both and either email or in-app succeeded => mark sent
+        const shouldMarkSent =
+          (reminder.channel === 'email' && emailSuccess) ||
+          (reminder.channel === 'in-app' && notifCreated) ||
+          (reminder.channel === 'both' && (emailSuccess || notifCreated))
+
+        if (shouldMarkSent) {
+          reminder.isSent = true
+          if (emailSuccess) reminder.emailSent = true
+          await reminder.save()
+        } else {
+          // Do not mark as sent; allow the cron to retry later
+          await reminder.save()
+        }
       } catch (error) {
         console.error(`Failed to process reminder ${reminder._id}:`, error)
         failed++
@@ -502,7 +543,7 @@ export async function createAssignmentReminders(
     for (const config of configs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         const subjectName = (assignment.subject as any)?.name || 'Subject'
         await Reminder.create({
@@ -556,7 +597,7 @@ export async function createExamReminders(
     for (const config of configs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         const subjectName = (exam.subject as any)?.name || 'Subject'
         await Reminder.create({
@@ -625,10 +666,7 @@ export async function createHabitReminders(
       const existingReminder = await Reminder.findOne({
         relatedTo: 'habit',
         relatedId: habit._id,
-        triggerTime: {
-          $gte: new Date(triggerTime.setHours(0, 0, 0, 0)),
-          $lt: new Date(triggerTime.setHours(23, 59, 59, 999))
-        }
+        triggerTime,
       })
 
       if (!existingReminder) {
@@ -683,7 +721,7 @@ export async function createTimeBlockReminders(
     for (const config of configs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         await Reminder.create({
           user: timeBlock.user,
@@ -736,7 +774,7 @@ export async function createContentReminders(
     for (const config of configs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         await Reminder.create({
           user: content.user,
@@ -789,7 +827,7 @@ export async function createSubjectReminders(
     for (const config of configs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         await Reminder.create({
           user: subject.user,
@@ -846,7 +884,7 @@ export async function updateSubjectReminders(
     for (const config of reminderConfigs) {
       if (!config.enabled) continue
 
-      const triggerTime = new Date(config.reminderTime)
+      const triggerTime = normalizeReminderTime(new Date(config.reminderTime))
       if (triggerTime > new Date()) {
         await Reminder.create({
           user: subject.user,

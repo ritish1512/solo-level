@@ -144,7 +144,12 @@ export async function getTasksAction(filter: string = 'All'): Promise<TaskRespon
       query.deadline = { $gt: tomorrowEnd }
     }
 
-    const tasks = await Task.find(query).sort({ deadline: 1, priority: -1 })
+    // Use lean() to return plain JS objects and avoid Mongoose document overhead.
+    // Exclude potentially large fields like attachments to reduce payload size.
+    const tasks = await Task.find(query)
+      .sort({ deadline: 1, priority: -1 })
+      .select('-__v -attachments')
+      .lean()
 
     return {
       success: true,
@@ -164,7 +169,10 @@ export async function getProjectTasksAction(projectId: string): Promise<TaskResp
     const tasks = await Task.find({
       user: session.user.id,
       project: new mongoose.Types.ObjectId(projectId),
-    }).sort({ deadline: 1, priority: -1 })
+    })
+      .sort({ deadline: 1, priority: -1 })
+      .select('-__v -attachments')
+      .lean()
 
     return {
       success: true,
@@ -242,6 +250,8 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
           reminderTime: config.reminderTime ? new Date(config.reminderTime) : undefined,
         }))
         await createTaskReminders(id, configsForService)
+      } else if (task.reminderConfigs && task.reminderConfigs.length > 0) {
+        await createTaskReminders(id, task.reminderConfigs)
       } else if (task.reminderOffset && task.reminderOffset > 0) {
         // Fallback to old reminder offset system
         const triggerTime = new Date(currentDeadlineTime - task.reminderOffset * 60 * 1000)

@@ -35,7 +35,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
         await dbConnect()
 
+        // Select only the fields required for credential verification to reduce payload
         const user = await User.findOne({ email: (credentials.email as string).toLowerCase() })
+          .select('_id password email name status role emailVerified')
 
         // Replaced generic throws with CustomAuthError instances
         if (!user) {

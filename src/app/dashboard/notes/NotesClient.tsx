@@ -323,7 +323,7 @@ export default function NotesClient({ initialNotes }: NotesClientProps) {
         </div>
 
         {/* Right Pane: Markdown Text editor & Preview */}
-        <div className="lg:col-span-3 border border-border bg-card/25 rounded-xl flex flex-col overflow-hidden h-full">
+        <div className="lg:col-span-3 border border-border bg-card/25 rounded-xl flex flex-col overflow-hidden h-dvh">
           {selectedNote ? (
             <div className="flex-1 flex flex-col overflow-hidden">
               

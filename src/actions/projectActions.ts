@@ -6,7 +6,7 @@ import dbConnect from '@/lib/mongodb'
 import Project from '@/models/Project'
 import Bug from '@/models/Bug'
 import Task from '@/models/Task'
-import { generateAutoReminders, createProjectReminders } from '@/services/reminderService'
+import { generateAutoReminders, createProjectReminders, deleteProjectReminders } from '@/services/reminderService'
 
 export interface ProjectResponse {
   success: boolean
@@ -32,7 +32,7 @@ async function checkAuth() {
 export async function createProjectAction(data: any): Promise<ProjectResponse> {
   try {
     const session = await checkAuth()
-    const { title, description, githubLink, demoLink, deploymentLink, techStack, screenshots, notes, deadline } = data
+    const { title, description, githubLink, demoLink, deploymentLink, techStack, screenshots, notes, deadline, reminderConfigs } = data
 
     if (!title) {
       return { success: false, error: 'Project title is required.' }
@@ -52,10 +52,16 @@ export async function createProjectAction(data: any): Promise<ProjectResponse> {
       screenshots: screenshots || [],
       notes,
       deadline: deadlineDate,
+      reminderConfigs: Array.isArray(reminderConfigs) ? reminderConfigs : [],
     })
 
-    // Generate automatic reminders if deadline is provided
-    if (deadlineDate) {
+    if (Array.isArray(reminderConfigs) && reminderConfigs.length > 0) {
+      const configsForService = reminderConfigs.map((config: any) => ({
+        ...config,
+        reminderTime: config.reminderTime ? new Date(config.reminderTime) : undefined,
+      }))
+      await createProjectReminders(newProject._id.toString(), configsForService)
+    } else if (deadlineDate) {
       const autoReminders = generateAutoReminders(deadlineDate, 'assignment') // Use 'assignment' type for projects
       if (autoReminders.length > 0) {
         await createProjectReminders(newProject._id.toString(), autoReminders)
@@ -78,7 +84,11 @@ export async function getProjectsAction(): Promise<ProjectResponse> {
     const session = await checkAuth()
     await dbConnect()
 
-    const projects = await Project.find({ user: session.user.id }).sort({ createdAt: -1 })
+    // Use lean() for read-only project lists and exclude large screenshot arrays
+    const projects = await Project.find({ user: session.user.id })
+      .sort({ createdAt: -1 })
+      .select('-__v -screenshots')
+      .lean()
     return {
       success: true,
       projects: JSON.parse(JSON.stringify(projects)),
@@ -99,7 +109,9 @@ export async function updateProjectAction(id: string, data: any): Promise<Projec
       return { success: false, error: 'Project not found.' }
     }
 
-    const { title, description, githubLink, demoLink, deploymentLink, techStack, screenshots, notes } = data
+    const { title, description, githubLink, demoLink, deploymentLink, techStack, screenshots, notes, deadline, reminderConfigs } = data
+    const deadlineDate = deadline !== undefined ? (deadline ? new Date(deadline) : undefined) : project.deadline
+    const deadlineChanged = deadline !== undefined && !project.deadline ? true : deadline !== undefined && project.deadline ? new Date(deadline).getTime() !== project.deadline.getTime() : false
 
     project.title = title || project.title
     project.description = description !== undefined ? description : project.description
@@ -109,8 +121,34 @@ export async function updateProjectAction(id: string, data: any): Promise<Projec
     project.techStack = techStack || project.techStack
     project.screenshots = screenshots || project.screenshots
     project.notes = notes !== undefined ? notes : project.notes
+    project.deadline = deadlineDate
+
+    if (reminderConfigs !== undefined) {
+      project.reminderConfigs = Array.isArray(reminderConfigs) ? reminderConfigs : project.reminderConfigs
+    }
 
     await project.save()
+
+    if (reminderConfigs !== undefined) {
+      await deleteProjectReminders(id)
+
+      if (Array.isArray(reminderConfigs) && reminderConfigs.length > 0) {
+        const configsForService = reminderConfigs.map((config: any) => ({
+          ...config,
+          reminderTime: config.reminderTime ? new Date(config.reminderTime) : undefined,
+        }))
+        await createProjectReminders(id, configsForService)
+      } else {
+        project.reminderSent = false
+        await project.save()
+      }
+    } else if (deadlineChanged && (!project.reminderConfigs || project.reminderConfigs.length === 0) && project.deadline) {
+      await deleteProjectReminders(id)
+      const autoReminders = generateAutoReminders(project.deadline, 'assignment')
+      if (autoReminders.length > 0) {
+        await createProjectReminders(id, autoReminders)
+      }
+    }
 
     return {
       success: true,
@@ -132,6 +170,8 @@ export async function deleteProjectAction(id: string): Promise<ProjectResponse> 
     if (!project) {
       return { success: false, error: 'Project not found.' }
     }
+
+    await deleteProjectReminders(id)
 
     // Cascade delete bugs and clear project references from tasks
     await Bug.deleteMany({ project: id })
@@ -188,7 +228,10 @@ export async function getBugsAction(projectId: string): Promise<ProjectResponse>
     const bugs = await Bug.find({
       user: session.user.id,
       project: projectId,
-    }).sort({ status: 1, severity: -1, createdAt: -1 })
+    })
+      .sort({ status: 1, severity: -1, createdAt: -1 })
+      .select('-__v')
+      .lean()
 
     return {
       success: true,

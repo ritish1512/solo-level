@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import dbConnect from '@/lib/mongodb'
 import ContentIdea from '@/models/ContentIdea'
 import { sendScheduledContentReminder } from '@/services/emailService'
+import runInBackground from '@/lib/cronHelper'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,60 +18,54 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Authorization validation - check bearer token
+    // Authorization validation - accept Bearer or X-Cron-Secret header
     const authHeader = request.headers.get('authorization')
+    const headerSecret = request.headers.get('x-cron-secret')
     const serverSecret = process.env.CRON_SECRET
 
-    if (!authHeader || authHeader !== `Bearer ${serverSecret}`) {
+    const isAuthorized = (authHeader && authHeader === `Bearer ${serverSecret}`) || (headerSecret && headerSecret === serverSecret)
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Open secure database connection pool
-    await dbConnect()
+    const bgTask = async () => {
+      await dbConnect()
+      const now = new Date()
+      const currentTime = now.getTime()
 
-    const now = new Date()
-    const currentTime = now.getTime()
+      try {
+        const endOfTomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
+        const scheduledContent = await ContentIdea.find({
+          scheduledDate: { $gte: now, $lte: endOfTomorrow },
+        }).select('_id user title platform scheduledDate lastReminderSentAt').populate('user', '_id email name').lean()
 
-    // ==================== SCHEDULED CONTENT REMINDERS ====================
-    try {
-      // Look for content scheduled for the next 24 hours (evening check for next day's content)
-      const endOfTomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000)
-      const scheduledContent = await ContentIdea.find({
-        scheduledDate: { $gte: now, $lte: endOfTomorrow },
-      }).populate('user')
+        await Promise.all(
+          scheduledContent.map(async (content: any) => {
+            try {
+              const user = content.user as any
+              if (!user) return
 
-      // Process scheduled content concurrently using Promise.all
-      await Promise.all(
-        scheduledContent.map(async (content) => {
-          try {
-            const user = content.user as any
-            if (!user) return
+              const lastEmailDate = content.lastReminderSentAt ? new Date(content.lastReminderSentAt) : null
+              if (lastEmailDate && currentTime - lastEmailDate.getTime() < 24 * 60 * 60 * 1000) {
+                return
+              }
 
-            // Send once per day only validation constraint check
-            const lastEmailDate = content.lastReminderSentAt ? new Date(content.lastReminderSentAt) : null
-            if (lastEmailDate && currentTime - lastEmailDate.getTime() < 24 * 60 * 60 * 1000) {
-              return
+              await sendScheduledContentReminder(user.email, user.name, content.title, content.platform, content.scheduledDate ?? now)
+
+              await ContentIdea.updateOne({ _id: content._id }, { $set: { lastReminderSentAt: now } })
+              result.contentReminders++
+            } catch (singleContentErr: any) {
+              result.errors.push(`Content dynamic error (ID ${content._id}): ${singleContentErr.message}`)
             }
-
-            await sendScheduledContentReminder(user.email, user.name, content.title, content.platform, content.scheduledDate ?? now)
-            
-            content.lastReminderSentAt = now
-            await content.save()
-            result.contentReminders++
-          } catch (singleContentErr: any) {
-            result.errors.push(`Content dynamic error (ID ${content._id}): ${singleContentErr.message}`)
-          }
-        })
-      )
-    } catch (err: any) {
-      result.errors.push(`Content reminders error: ${err.message}`)
+          })
+        )
+      } catch (err: any) {
+        result.errors.push(`Content reminders error: ${err.message}`)
+      }
     }
 
-    return NextResponse.json({
-      success: true,
-      message: 'Evening daily notifications processed successfully.',
-      result,
-    })
+    runInBackground(bgTask).catch(() => null)
+    return NextResponse.json({ success: true, scheduled: true, message: 'Evening task scheduled.' })
 
   } catch (error: any) {
     console.error('Evening Cron Error:', error)

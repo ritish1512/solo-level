@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useState, useTransition, useEffect } from 'react'
+import React, { useState, useTransition, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { 
   Plus, 
@@ -11,7 +12,8 @@ import {
   Check, 
   X, 
   BookOpen,
-  Bell
+  Bell,
+  AlertTriangle
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -24,11 +26,20 @@ import {
   logSubjectAttendanceAction,
   deleteSubjectAction,
   createAssignmentAction,
+  updateAssignmentAction,
   updateAssignmentStatusAction,
   deleteAssignmentAction,
   createExamAction,
+  updateExamDetailsAction,
   updateExamAction,
-  updateSubjectRemindersAction
+  deleteExamAction,
+  updateSubjectRemindersAction,
+  requestAssignmentDeletionAction,
+  confirmAssignmentDeletionAction,
+  cancelAssignmentDeletionAction,
+  requestExamDeletionAction,
+  confirmExamDeletionAction,
+  cancelExamDeletionAction
 } from '@/actions/collegeActions'
 
 interface CollegeClientProps {
@@ -44,11 +55,77 @@ export default function CollegeClient({
 }: CollegeClientProps) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
+  const searchParams = useSearchParams()
 
   // State arrays
   const [subjects, setSubjects] = useState<any[]>(initialSubjects)
   const [assignments, setAssignments] = useState<any[]>(initialAssignments)
   const [exams, setExams] = useState<any[]>(initialExams)
+
+  // Handle deletion confirmation from URL parameters
+  useEffect(() => {
+    const confirmDelete = searchParams.get('confirmDelete')
+    const cancelDelete = searchParams.get('cancelDelete')
+    const id = searchParams.get('id')
+
+    if (confirmDelete && id) {
+      if (confirmDelete === 'assignment') {
+        startTransition(async () => {
+          const res = await confirmAssignmentDeletionAction(id)
+          if (res.success) {
+            toast('Assignment deleted successfully', 'success')
+            setAssignments((prev) => prev.filter((a) => a._id !== id))
+          } else {
+            toast(res.error || 'Failed to delete assignment', 'error')
+          }
+        })
+      } else if (confirmDelete === 'exam') {
+        startTransition(async () => {
+          const res = await confirmExamDeletionAction(id)
+          if (res.success) {
+            toast('Exam deleted successfully', 'success')
+            setExams((prev) => prev.filter((e) => e._id !== id))
+          } else {
+            toast(res.error || 'Failed to delete exam', 'error')
+          }
+        })
+      }
+    } else if (cancelDelete && id) {
+      if (cancelDelete === 'assignment') {
+        startTransition(async () => {
+          const res = await cancelAssignmentDeletionAction(id)
+          if (res.success) {
+            toast('Deletion request cancelled', 'success')
+            setAssignments((prev) => 
+              prev.map((a) => 
+                a._id === id 
+                  ? { ...a, deletionRequested: false, deletionRequestedAt: undefined } 
+                  : a
+              )
+            )
+          } else {
+            toast(res.error || 'Failed to cancel deletion', 'error')
+          }
+        })
+      } else if (cancelDelete === 'exam') {
+        startTransition(async () => {
+          const res = await cancelExamDeletionAction(id)
+          if (res.success) {
+            toast('Deletion request cancelled', 'success')
+            setExams((prev) => 
+              prev.map((e) => 
+                e._id === id 
+                  ? { ...e, deletionRequested: false, deletionRequestedAt: undefined } 
+                  : e
+              )
+            )
+          } else {
+            toast(res.error || 'Failed to cancel deletion', 'error')
+          }
+        })
+      }
+    }
+  }, [searchParams, toast])
 
   // Caching college states in IndexedDB for offline reliability
   useEffect(() => {
@@ -106,8 +183,13 @@ export default function CollegeClient({
 
   // Forms
   const [subjectForm, setSubjectForm] = useState({ name: '', code: '', reminderConfigs: [] as Array<{ enabled: boolean; reminderTime: string; message?: string; notificationType: 'email' | 'in-app' | 'both' }> })
-  const [assignmentForm, setAssignmentForm] = useState({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '' })
-  const [examForm, setExamForm] = useState({ subjectId: '', examType: 'Internal', date: '', syllabus: '' })
+  const [assignmentForm, setAssignmentForm] = useState({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '', fileLink: '', useLink: false })
+  const [examForm, setExamForm] = useState({ subjectId: '', examType: 'Internal', date: '', syllabus: '', fileUrl: '', fileLink: '', useLink: false })
+  const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null)
+  const [editingExamId, setEditingExamId] = useState<string | null>(null)
+
+  const assignmentFileInputRef = useRef<HTMLInputElement>(null)
+  const examFileInputRef = useRef<HTMLInputElement>(null)
 
   // File Upload State
   const [uploading, setUploading] = useState(false)
@@ -137,7 +219,7 @@ export default function CollegeClient({
   })
 
   // --- FILE UPLOADER TO CLOUDINARY PROXY ---
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, target: 'assignment' | 'exam') => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -154,8 +236,12 @@ export default function CollegeClient({
       if (!res.ok) throw new Error('Upload request failed.')
       
       const data = await res.json()
-      setAssignmentForm((prev) => ({ ...prev, fileUrl: data.url }))
-      toast('Document uploaded successfully!', 'success')
+      if (target === 'assignment') {
+        setAssignmentForm((prev) => ({ ...prev, fileUrl: data.url, fileLink: '', useLink: false }))
+      } else {
+        setExamForm((prev) => ({ ...prev, fileUrl: data.url, fileLink: '', useLink: false }))
+      }
+      toast('File uploaded successfully!', 'success')
     } catch (err) {
       console.error(err)
       toast('Failed to upload file. Check console.', 'error')
@@ -279,10 +365,37 @@ export default function CollegeClient({
     e.preventDefault()
     startTransition(async () => {
       const { executeAction } = await import('@/lib/offlineSync')
+      const payload = {
+        title: assignmentForm.title,
+        description: assignmentForm.description,
+        subjectId: assignmentForm.subjectId,
+        dueDate: assignmentForm.dueDate,
+        fileUrl: assignmentForm.useLink ? assignmentForm.fileLink : assignmentForm.fileUrl,
+      }
+
+      if (editingAssignmentId) {
+        const res = await executeAction(
+          'updateAssignmentAction',
+          updateAssignmentAction,
+          [editingAssignmentId, payload],
+          () => ({ success: true })
+        )
+        if (res.success) {
+          toast('Assignment updated!', 'success')
+          setAssignments((prev) => prev.map((a) => (a._id === editingAssignmentId ? { ...a, ...payload, title: payload.title, description: payload.description, dueDate: payload.dueDate } : a)))
+          setEditingAssignmentId(null)
+          setAssignmentForm({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '', fileLink: '', useLink: false })
+          setShowAddAssignment(false)
+        } else {
+          toast(res.error || 'Failed to update assignment', 'error')
+        }
+        return
+      }
+
       const res = await executeAction(
         'createAssignmentAction',
         createAssignmentAction,
-        [assignmentForm],
+        [payload],
         (args, tempId) => ({
           assignment: {
             _id: tempId,
@@ -294,14 +407,13 @@ export default function CollegeClient({
       )
       if (res.success) {
         toast('Assignment logged!', 'success')
-        // We populate the subject locally
         const matchedSub = subjects.find((s) => s._id === assignmentForm.subjectId)
         const assignmentWithPopulatedSubject = {
           ...res.assignment,
           subject: matchedSub ? { _id: matchedSub._id, name: matchedSub.name, code: matchedSub.code } : null
         }
         setAssignments((prev) => [...prev, assignmentWithPopulatedSubject])
-        setAssignmentForm({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '' })
+        setAssignmentForm({ title: '', description: '', subjectId: '', dueDate: '', fileUrl: '', fileLink: '', useLink: false })
         setShowAddAssignment(false)
       } else {
         toast(res.error || 'Failed to record assignment', 'error')
@@ -330,21 +442,111 @@ export default function CollegeClient({
   }
 
   const handleDeleteAssignment = (id: string) => {
-    startTransition(async () => {
-      const { executeAction } = await import('@/lib/offlineSync')
-      const res = await executeAction(
-        'deleteAssignmentAction',
-        deleteAssignmentAction,
-        [id],
-        () => ({ success: true })
-      )
-      if (res.success) {
-        setAssignments((prev) => prev.filter((a) => a._id !== id))
-        toast('Assignment deleted.', 'info')
-      } else {
-        toast(res.error || 'Failed to delete assignment', 'error')
-      }
+    const assignment = assignments.find((a) => a._id === id)
+    const isPastDue = assignment && new Date(assignment.dueDate) < new Date()
+
+    if (isPastDue) {
+      // Request deletion confirmation for past-due assignments
+      startTransition(async () => {
+        const res = await requestAssignmentDeletionAction(id)
+        if (res.success) {
+          toast('Deletion confirmation requested. Please check your email.', 'success')
+          setAssignments((prev) => 
+            prev.map((a) => 
+              a._id === id 
+                ? { ...a, deletionRequested: true, deletionRequestedAt: new Date() } 
+                : a
+            )
+          )
+        } else {
+          toast(res.error || 'Failed to request deletion', 'error')
+        }
+      })
+    } else {
+      // Direct delete for non-past-due assignments
+      startTransition(async () => {
+        const { executeAction } = await import('@/lib/offlineSync')
+        const res = await executeAction(
+          'deleteAssignmentAction',
+          deleteAssignmentAction,
+          [id],
+          () => ({ success: true })
+        )
+        if (res.success) {
+          setAssignments((prev) => prev.filter((a) => a._id !== id))
+          toast('Assignment deleted.', 'info')
+        } else {
+          toast(res.error || 'Failed to delete assignment', 'error')
+        }
+      })
+    }
+  }
+
+  const handleEditAssignment = (assignment: any) => {
+    setEditingAssignmentId(assignment._id)
+    setAssignmentForm({
+      title: assignment.title || '',
+      description: assignment.description || '',
+      subjectId: assignment.subject?._id || assignment.subject || '',
+      dueDate: assignment.dueDate ? new Date(assignment.dueDate).toISOString().slice(0, 10) : '',
+      fileUrl: assignment.fileUrl || '',
+      fileLink: assignment.fileUrl || '',
+      useLink: false,
     })
+    setShowAddAssignment(true)
+  }
+
+  const handleDeleteExam = (id: string) => {
+    const exam = exams.find((e) => e._id === id)
+    const isPastDue = exam && new Date(exam.date) < new Date()
+
+    if (isPastDue) {
+      startTransition(async () => {
+        const res = await requestExamDeletionAction(id)
+        if (res.success) {
+          toast('Deletion confirmation requested. Please check your email.', 'success')
+          setExams((prev) => 
+            prev.map((e) => 
+              e._id === id 
+                ? { ...e, deletionRequested: true, deletionRequestedAt: new Date() } 
+                : e
+            )
+          )
+        } else {
+          toast(res.error || 'Failed to request deletion', 'error')
+        }
+      })
+    } else {
+      startTransition(async () => {
+        const { executeAction } = await import('@/lib/offlineSync')
+        const res = await executeAction(
+          'deleteExamAction',
+          deleteExamAction,
+          [id],
+          () => ({ success: true })
+        )
+        if (res.success) {
+          setExams((prev) => prev.filter((e) => e._id !== id))
+          toast('Exam deleted.', 'info')
+        } else {
+          toast(res.error || 'Failed to delete exam', 'error')
+        }
+      })
+    }
+  }
+
+  const handleEditExam = (exam: any) => {
+    setEditingExamId(exam._id)
+    setExamForm({
+      subjectId: exam.subject?._id || exam.subject || '',
+      examType: exam.examType || 'Internal',
+      date: exam.date ? new Date(exam.date).toISOString().slice(0, 10) : '',
+      syllabus: exam.syllabus || '',
+      fileUrl: exam.fileUrl || '',
+      fileLink: exam.fileUrl || '',
+      useLink: false,
+    })
+    setShowAddExam(true)
   }
 
   // --- EXAM ACTIONS ---
@@ -352,10 +554,37 @@ export default function CollegeClient({
     e.preventDefault()
     startTransition(async () => {
       const { executeAction } = await import('@/lib/offlineSync')
+      const payload = {
+        subjectId: examForm.subjectId,
+        examType: examForm.examType,
+        date: examForm.date,
+        syllabus: examForm.syllabus,
+        fileUrl: examForm.useLink ? examForm.fileLink : examForm.fileUrl,
+      }
+
+      if (editingExamId) {
+        const res = await executeAction(
+          'updateExamDetailsAction',
+          updateExamDetailsAction,
+          [editingExamId, payload],
+          () => ({ success: true })
+        )
+        if (res.success) {
+          toast('Exam updated!', 'success')
+          setExams((prev) => prev.map((ex) => ex._id === editingExamId ? { ...ex, ...payload, examType: payload.examType, date: payload.date } : ex))
+          setEditingExamId(null)
+          setExamForm({ subjectId: '', examType: 'Internal', date: '', syllabus: '', fileUrl: '', fileLink: '', useLink: false })
+          setShowAddExam(false)
+        } else {
+          toast(res.error || 'Failed to update exam', 'error')
+        }
+        return
+      }
+
       const res = await executeAction(
         'createExamAction',
         createExamAction,
-        [examForm],
+        [payload],
         (args, tempId) => ({
           exam: {
             _id: tempId,
@@ -372,7 +601,7 @@ export default function CollegeClient({
           subject: matchedSub ? { _id: matchedSub._id, name: matchedSub.name, code: matchedSub.code } : null
         }
         setExams((prev) => [...prev, examWithPopulatedSubject])
-        setExamForm({ subjectId: '', examType: 'Internal', date: '', syllabus: '' })
+        setExamForm({ subjectId: '', examType: 'Internal', date: '', syllabus: '', fileUrl: '', fileLink: '', useLink: false })
         setShowAddExam(false)
       } else {
         toast(res.error || 'Failed to schedule exam', 'error')
@@ -448,6 +677,7 @@ export default function CollegeClient({
       description: ex.syllabus,
       marksObtained: ex.marksObtained,
       maxMarks: ex.maxMarks,
+      fileUrl: ex.fileUrl,
     })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime())
 
@@ -628,7 +858,30 @@ export default function CollegeClient({
                       >
                         {item.status === 'Completed' ? 'Mark Todo' : 'Mark Completed'}
                       </Button>
+                      <Button onClick={() => handleEditAssignment(item)} size="sm" variant="secondary">
+                        Edit
+                      </Button>
                       <Button onClick={() => handleDeleteAssignment(item.id)} size="sm" variant="destructive">
+                        Delete
+                      </Button>
+                      {item.fileUrl && (
+                        <a
+                          href={item.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-indigo-500 hover:text-indigo-400"
+                        >
+                          View attachment
+                        </a>
+                      )}
+                    </>
+                  )}
+                  {item.type === 'Exam' && (
+                    <>
+                      <Button onClick={() => handleEditExam(item)} size="sm" variant="secondary">
+                        Edit
+                      </Button>
+                      <Button onClick={() => handleDeleteExam(item.id)} size="sm" variant="destructive">
                         Delete
                       </Button>
                       {item.fileUrl && (
@@ -718,15 +971,59 @@ export default function CollegeClient({
                 </div>
                 {/* File upload proxy */}
                 <div className="space-y-1">
-                  <Label>Homework File / Attachment (PDF/Image)</Label>
-                  <div className="flex gap-2">
-                    <Input type="file" onChange={handleFileUpload} disabled={uploading} className="text-xs pt-1.5" />
-                    <Button type="button" variant="outline" disabled={uploading} className="p-2">
-                      <Upload className="w-4.5 h-4.5" />
-                    </Button>
+                  <Label>Attachment</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentForm((prev) => ({ ...prev, useLink: false }))}
+                      className={`rounded-full border px-3 py-1 text-sm ${assignmentForm.useLink ? 'border-zinc-300 bg-background text-zinc-700' : 'border-indigo-500 bg-indigo-500/10 text-indigo-600'}`}
+                    >
+                      Upload file
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAssignmentForm((prev) => ({ ...prev, useLink: true }))}
+                      className={`rounded-full border px-3 py-1 text-sm ${assignmentForm.useLink ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600' : 'border-zinc-300 bg-background text-zinc-700'}`}
+                    >
+                      Add link
+                    </button>
                   </div>
+                  {assignmentForm.useLink ? (
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/assignment"
+                      value={assignmentForm.fileLink}
+                      onChange={(e) => setAssignmentForm((prev) => ({ ...prev, fileLink: e.target.value }))}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={assignmentFileInputRef}
+                        type="file"
+                        accept="application/pdf,image/*"
+                        onChange={(e) => handleFileUpload(e, 'assignment')}
+                        disabled={uploading}
+                        className="hidden"
+                        id="assignment-file-upload"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={uploading}
+                        onClick={() => assignmentFileInputRef.current?.click()}
+                      >
+                        <Upload className="w-4.5 h-4.5" />
+                        {uploading ? 'Uploading...' : 'Upload file'}
+                      </Button>
+                    </div>
+                  )}
+                  {(assignmentForm.fileUrl && !assignmentForm.useLink) || (assignmentForm.fileLink && assignmentForm.useLink) ? (
+                    <p className="text-xs text-zinc-500">
+                      {assignmentForm.useLink ? 'Link added.' : 'Uploaded file attached.'}
+                    </p>
+                  ) : null}
                 </div>
-                <Button type="submit" variant="primary" className="w-full" isLoading={isPending || uploading}>Save Assignment</Button>
+                <Button type="submit" variant="primary" className="w-full" isLoading={isPending || uploading}>{editingAssignmentId ? 'Update Assignment' : 'Save Assignment'}</Button>
               </form>
             </motion.div>
           </div>
@@ -766,7 +1063,60 @@ export default function CollegeClient({
                   <Label htmlFor="exSyllabus">Syllabus Details</Label>
                   <textarea id="exSyllabus" placeholder="Chapters, topics..." value={examForm.syllabus} onChange={(e) => setExamForm((prev) => ({ ...prev, syllabus: e.target.value }))} className="flex w-full rounded-md border border-border bg-background/50 px-3 py-2 text-sm text-zinc-900 dark:text-zinc-50 outline-none focus-visible:ring-2 focus-visible:ring-ring" rows={3} />
                 </div>
-                <Button type="submit" variant="primary" className="w-full" isLoading={isPending}>Schedule Exam</Button>
+                <div className="space-y-1">
+                  <Label>Attachment</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setExamForm((prev) => ({ ...prev, useLink: false }))}
+                      className={`rounded-full border px-3 py-1 text-sm ${examForm.useLink ? 'border-zinc-300 bg-background text-zinc-700' : 'border-indigo-500 bg-indigo-500/10 text-indigo-600'}`}
+                    >
+                      Upload file
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExamForm((prev) => ({ ...prev, useLink: true }))}
+                      className={`rounded-full border px-3 py-1 text-sm ${examForm.useLink ? 'border-indigo-500 bg-indigo-500/10 text-indigo-600' : 'border-zinc-300 bg-background text-zinc-700'}`}
+                    >
+                      Add link
+                    </button>
+                  </div>
+                  {examForm.useLink ? (
+                    <Input
+                      type="url"
+                      placeholder="https://example.com/exam-syllabus"
+                      value={examForm.fileLink}
+                      onChange={(e) => setExamForm((prev) => ({ ...prev, fileLink: e.target.value }))}
+                    />
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={examFileInputRef}
+                        type="file"
+                        accept="application/pdf,image/*"
+                        onChange={(e) => handleFileUpload(e, 'exam')}
+                        disabled={uploading}
+                        className="hidden"
+                        id="exam-file-upload"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={uploading}
+                        onClick={() => examFileInputRef.current?.click()}
+                      >
+                        <Upload className="w-4.5 h-4.5" />
+                        {uploading ? 'Uploading...' : 'Upload file'}
+                      </Button>
+                    </div>
+                  )}
+                  {(examForm.fileUrl && !examForm.useLink) || (examForm.fileLink && examForm.useLink) ? (
+                    <p className="text-xs text-zinc-500">
+                      {examForm.useLink ? 'Link added.' : 'Uploaded file attached.'}
+                    </p>
+                  ) : null}
+                </div>
+                <Button type="submit" variant="primary" className="w-full" isLoading={isPending}>{editingExamId ? 'Update Exam' : 'Schedule Exam'}</Button>
               </form>
             </motion.div>
           </div>

@@ -383,6 +383,48 @@ export async function sendCustomEventReminder(email: string, name: string, event
   return sendEmailSafely(mailOptions)
 }
 
+export async function sendDeletionConfirmationEmail(
+  email: string,
+  name: string,
+  itemType: 'assignment' | 'exam',
+  itemTitle: string,
+  itemId: string
+) {
+  const siteUrl = process.env.NEXTAUTH_URL || 'https://sololevelingguider.vercel.app/'
+  const confirmUrl = `${siteUrl}/dashboard/college?confirmDelete=${itemType}&id=${itemId}`
+  const cancelUrl = `${siteUrl}/dashboard/college?cancelDelete=${itemType}&id=${itemId}`
+
+  const mailOptions = {
+    from: `"Solo Leveling" <${process.env.SMTP_FROM || 'noreply@sololeveling.com'}>`,
+    to: email,
+    subject: `🗑️ Confirm Deletion: ${itemType === 'assignment' ? 'Assignment' : 'Exam'} - ${itemTitle}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; background-color: #ffffff; color: #333333;">
+        <h2 style="color: #dc2626; text-align: center;">🗑️ Confirm Deletion</h2>
+        <p>Hello ${name},</p>
+        <p>Your ${itemType === 'assignment' ? 'assignment' : 'exam'} deadline has passed. Would you like to delete it from your records?</p>
+        <div style="background-color: #fef2f2; padding: 15px; border-left: 4px solid #dc2626; border-radius: 4px; margin: 20px 0;">
+          <strong style="font-size: 16px;">${itemTitle}</strong>
+          <p style="margin: 10px 0 0 0; color: #991b1b;">Type: ${itemType === 'assignment' ? 'Assignment' : 'Exam'}</p>
+        </div>
+        <p>This item is no longer active since its deadline has passed. You can choose to:</p>
+        <ul style="margin: 20px 0; padding-left: 20px;">
+          <li><strong>Delete</strong> - Remove it from your records permanently</li>
+          <li><strong>Keep</strong> - Retain it for future reference</li>
+        </ul>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${confirmUrl}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-right: 10px;">Delete</a>
+          <a href="${cancelUrl}" style="background-color: #6b7280; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Keep</a>
+        </div>
+        <hr style="border: 0; border-top: 1px solid #eee; margin-top: 30px;" />
+        <p style="font-size: 12px; color: #999; text-align: center;">This is an automated message from Solo Leveling. If you didn't request this, please ignore this email.</p>
+      </div>
+    `,
+  }
+
+  return sendEmailSafely(mailOptions)
+}
+
 // Helper function to safely send emails
 async function sendEmailSafely(mailOptions: any) {
   // Fallback console log for development

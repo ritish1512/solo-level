@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import dbConnect from '@/lib/mongodb'
 import { processPendingReminders } from '@/services/reminderService'
+import runInBackground from '@/lib/cronHelper'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,28 +21,31 @@ export async function GET(request: Request) {
   }
 
   try {
-    // Authorization validation - check bearer token
+    // Authorization validation - accept Bearer or X-Cron-Secret header
     const authHeader = request.headers.get('authorization')
+    const headerSecret = request.headers.get('x-cron-secret')
     const serverSecret = process.env.CRON_SECRET
 
-    if (!authHeader || authHeader !== `Bearer ${serverSecret}`) {
+    const isAuthorized = (authHeader && authHeader === `Bearer ${serverSecret}`) || (headerSecret && headerSecret === serverSecret)
+    if (!isAuthorized) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Open secure database connection pool
-    await dbConnect()
+    const bgTask = async () => {
+      await dbConnect()
+      try {
+        const reminderResult = await processPendingReminders()
+        result.remindersProcessed = reminderResult.processed
+        result.remindersSent = reminderResult.sent
+        result.remindersFailed = reminderResult.failed
+        console.log('Frequent cron background task finished', result)
+      } catch (err: any) {
+        console.error('Frequent cron background task error:', err)
+      }
+    }
 
-    // Process pending reminders using the reminder service
-    const reminderResult = await processPendingReminders()
-    result.remindersProcessed = reminderResult.processed
-    result.remindersSent = reminderResult.sent
-    result.remindersFailed = reminderResult.failed
-
-    return NextResponse.json({
-      success: true,
-      message: 'High-frequency time-sensitive notifications processed successfully.',
-      result,
-    })
+    runInBackground(bgTask).catch(() => null)
+    return NextResponse.json({ success: true, scheduled: true, message: 'Frequent task scheduled.' })
 
   } catch (error: any) {
     console.error('Frequent Cron Error:', error)

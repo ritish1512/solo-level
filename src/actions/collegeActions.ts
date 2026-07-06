@@ -14,6 +14,7 @@ import {
   updateSubjectReminders,
   generateAutoReminders
 } from '@/services/reminderService'
+import { sendDeletionConfirmationEmail } from '@/services/emailService'
 
 export interface CollegeResponse {
   success: boolean
@@ -257,6 +258,49 @@ export async function createAssignmentAction(data: any): Promise<CollegeResponse
   }
 }
 
+export async function updateAssignmentAction(id: string, data: any): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    const { title, description, subjectId, dueDate, fileUrl } = data
+
+    await dbConnect()
+
+    const assignment = await Assignment.findOne({ _id: id, user: session.user.id })
+    if (!assignment) {
+      return { success: false, error: 'Assignment not found.' }
+    }
+
+    if (title) assignment.title = title.trim()
+    if (description !== undefined) assignment.description = description
+    if (subjectId) assignment.subject = new mongoose.Types.ObjectId(subjectId)
+    if (dueDate) assignment.dueDate = new Date(dueDate)
+    if (fileUrl !== undefined) assignment.fileUrl = fileUrl
+
+    if (assignment.dueDate > new Date() && assignment.deletionRequested) {
+      assignment.deletionRequested = false
+      assignment.deletionRequestedAt = undefined
+      assignment.deletionConfirmed = false
+      assignment.deletionConfirmedAt = undefined
+    }
+
+    await assignment.save()
+
+    await deleteAssignmentReminders(id)
+    if (assignment.status !== 'Completed') {
+      await createAssignmentReminders(id)
+    }
+
+    return {
+      success: true,
+      message: 'Assignment updated successfully.',
+      assignment: JSON.parse(JSON.stringify(assignment)),
+    }
+  } catch (error: any) {
+    console.error('Update Assignment Error:', error)
+    return { success: false, error: error.message || 'Failed to update assignment.' }
+  }
+}
+
 export async function getAssignmentsAction(): Promise<CollegeResponse> {
   try {
     const session = await checkAuth()
@@ -334,7 +378,7 @@ export async function deleteAssignmentAction(id: string): Promise<CollegeRespons
 export async function createExamAction(data: any): Promise<CollegeResponse> {
   try {
     const session = await checkAuth()
-    const { subjectId, examType, date, syllabus } = data
+    const { subjectId, examType, date, syllabus, fileUrl } = data
 
     if (!subjectId || !date) {
       return { success: false, error: 'Subject and date are required.' }
@@ -349,6 +393,7 @@ export async function createExamAction(data: any): Promise<CollegeResponse> {
       examType,
       date: examDateObj,
       syllabus,
+      fileUrl,
     })
 
     // Generate automatic reminders (1 week before, 1 day before, on the day)
@@ -365,6 +410,48 @@ export async function createExamAction(data: any): Promise<CollegeResponse> {
   } catch (error: any) {
     console.error('Create Exam Error:', error)
     return { success: false, error: error.message || 'Failed to schedule exam.' }
+  }
+}
+
+export async function updateExamDetailsAction(id: string, data: any): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    const { examType, date, syllabus, fileUrl } = data
+
+    await dbConnect()
+
+    const exam = await Exam.findOne({ _id: id, user: session.user.id })
+    if (!exam) {
+      return { success: false, error: 'Exam not found.' }
+    }
+
+    if (examType) exam.examType = examType
+    if (date) exam.date = new Date(date)
+    if (syllabus !== undefined) exam.syllabus = syllabus
+    if (fileUrl !== undefined) exam.fileUrl = fileUrl
+
+    if (exam.date > new Date() && exam.deletionRequested) {
+      exam.deletionRequested = false
+      exam.deletionRequestedAt = undefined
+      exam.deletionConfirmed = false
+      exam.deletionConfirmedAt = undefined
+    }
+
+    await exam.save()
+
+    await deleteExamReminders(id)
+    if (exam.marksObtained === undefined) {
+      await createExamReminders(id)
+    }
+
+    return {
+      success: true,
+      message: 'Exam updated successfully.',
+      exam: JSON.parse(JSON.stringify(exam)),
+    }
+  } catch (error: any) {
+    console.error('Update Exam Details Error:', error)
+    return { success: false, error: error.message || 'Failed to update exam details.' }
   }
 }
 
@@ -417,6 +504,24 @@ export async function updateExamAction(id: string, marksObtained?: number, maxMa
   }
 }
 
+export async function deleteExamAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    await deleteExamReminders(id)
+    await Exam.deleteOne({ _id: id, user: session.user.id })
+
+    return {
+      success: true,
+      message: 'Exam removed.',
+    }
+  } catch (error: any) {
+    console.error('Delete Exam Error:', error)
+    return { success: false, error: error.message || 'Failed to delete exam.' }
+  }
+}
+
 export async function updateSubjectRemindersAction(subjectId: string, reminderConfigs: any[]): Promise<CollegeResponse> {
   try {
     const session = await checkAuth()
@@ -440,5 +545,205 @@ export async function updateSubjectRemindersAction(subjectId: string, reminderCo
   } catch (error: any) {
     console.error('Update Subject Reminders Error:', error)
     return { success: false, error: error.message || 'Failed to update subject reminders.' }
+  }
+}
+
+// --- DELETION CONFIRMATION ACTIONS ---
+
+export async function requestAssignmentDeletionAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const assignment = await Assignment.findOne({ _id: id, user: session.user.id }).populate('subject')
+    if (!assignment) {
+      return { success: false, error: 'Assignment not found.' }
+    }
+
+    // Check if deadline has passed
+    const now = new Date()
+    if (assignment.dueDate > now) {
+      return { success: false, error: 'Cannot request deletion before deadline.' }
+    }
+
+    assignment.deletionRequested = true
+    assignment.deletionRequestedAt = now
+    await assignment.save()
+
+    // Send confirmation email
+    if (session.user.email) {
+      await sendDeletionConfirmationEmail(
+        session.user.email,
+        session.user.name || 'User',
+        'assignment',
+        assignment.title,
+        assignment._id.toString()
+      )
+    }
+
+    return {
+      success: true,
+      message: 'Deletion confirmation requested. Please check your email to confirm.',
+      assignment: JSON.parse(JSON.stringify(assignment)),
+    }
+  } catch (error: any) {
+    console.error('Request Assignment Deletion Error:', error)
+    return { success: false, error: error.message || 'Failed to request deletion.' }
+  }
+}
+
+export async function confirmAssignmentDeletionAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const assignment = await Assignment.findOne({ _id: id, user: session.user.id })
+    if (!assignment) {
+      return { success: false, error: 'Assignment not found.' }
+    }
+
+    if (!assignment.deletionRequested) {
+      return { success: false, error: 'Deletion not requested.' }
+    }
+
+    // Delete associated reminders
+    await deleteAssignmentReminders(id)
+    
+    // Delete the assignment
+    await Assignment.deleteOne({ _id: id })
+
+    return {
+      success: true,
+      message: 'Assignment deleted successfully.',
+    }
+  } catch (error: any) {
+    console.error('Confirm Assignment Deletion Error:', error)
+    return { success: false, error: error.message || 'Failed to delete assignment.' }
+  }
+}
+
+export async function cancelAssignmentDeletionAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const assignment = await Assignment.findOne({ _id: id, user: session.user.id })
+    if (!assignment) {
+      return { success: false, error: 'Assignment not found.' }
+    }
+
+    assignment.deletionRequested = false
+    assignment.deletionRequestedAt = undefined
+    assignment.deletionConfirmed = false
+    assignment.deletionConfirmedAt = undefined
+    await assignment.save()
+
+    return {
+      success: true,
+      message: 'Deletion request cancelled.',
+      assignment: JSON.parse(JSON.stringify(assignment)),
+    }
+  } catch (error: any) {
+    console.error('Cancel Assignment Deletion Error:', error)
+    return { success: false, error: error.message || 'Failed to cancel deletion.' }
+  }
+}
+
+export async function requestExamDeletionAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const exam = await Exam.findOne({ _id: id, user: session.user.id }).populate('subject')
+    if (!exam) {
+      return { success: false, error: 'Exam not found.' }
+    }
+
+    // Check if exam date has passed
+    const now = new Date()
+    if (exam.date > now) {
+      return { success: false, error: 'Cannot request deletion before exam date.' }
+    }
+
+    exam.deletionRequested = true
+    exam.deletionRequestedAt = now
+    await exam.save()
+
+    // Send confirmation email
+    if (session.user.email) {
+      await sendDeletionConfirmationEmail(
+        session.user.email,
+        session.user.name || 'User',
+        'exam',
+        exam.examType,
+        exam._id.toString()
+      )
+    }
+
+    return {
+      success: true,
+      message: 'Deletion confirmation requested. Please check your email to confirm.',
+      exam: JSON.parse(JSON.stringify(exam)),
+    }
+  } catch (error: any) {
+    console.error('Request Exam Deletion Error:', error)
+    return { success: false, error: error.message || 'Failed to request deletion.' }
+  }
+}
+
+export async function confirmExamDeletionAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const exam = await Exam.findOne({ _id: id, user: session.user.id })
+    if (!exam) {
+      return { success: false, error: 'Exam not found.' }
+    }
+
+    if (!exam.deletionRequested) {
+      return { success: false, error: 'Deletion not requested.' }
+    }
+
+    // Delete associated reminders
+    await deleteExamReminders(id)
+    
+    // Delete the exam
+    await Exam.deleteOne({ _id: id })
+
+    return {
+      success: true,
+      message: 'Exam deleted successfully.',
+    }
+  } catch (error: any) {
+    console.error('Confirm Exam Deletion Error:', error)
+    return { success: false, error: error.message || 'Failed to delete exam.' }
+  }
+}
+
+export async function cancelExamDeletionAction(id: string): Promise<CollegeResponse> {
+  try {
+    const session = await checkAuth()
+    await dbConnect()
+
+    const exam = await Exam.findOne({ _id: id, user: session.user.id })
+    if (!exam) {
+      return { success: false, error: 'Exam not found.' }
+    }
+
+    exam.deletionRequested = false
+    exam.deletionRequestedAt = undefined
+    exam.deletionConfirmed = false
+    exam.deletionConfirmedAt = undefined
+    await exam.save()
+
+    return {
+      success: true,
+      message: 'Deletion request cancelled.',
+      exam: JSON.parse(JSON.stringify(exam)),
+    }
+  } catch (error: any) {
+    console.error('Cancel Exam Deletion Error:', error)
+    return { success: false, error: error.message || 'Failed to cancel deletion.' }
   }
 }

@@ -702,6 +702,14 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
                 <Button
                   onClick={async () => {
                     startTransition(async () => {
+                      // If this is a draft/new task (temp id), persist reminders to the local create form
+                      if (selectedTaskForReminder && selectedTaskForReminder._id === 'temp') {
+                        setReminderConfigs(selectedTaskForReminder.reminderConfigs || [])
+                        toast('Reminder settings saved to draft task.', 'success')
+                        setShowReminderModal(false)
+                        return
+                      }
+
                       const { executeAction } = await import('@/lib/offlineSync')
                       const res = await executeAction(
                         'updateTaskAction',
