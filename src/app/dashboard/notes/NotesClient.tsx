@@ -247,10 +247,10 @@ export default function NotesClient({ initialNotes }: NotesClientProps) {
       </div>
 
       {/* Dual Pane Workspace */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch h-[calc(100vh-210px)] min-h-[500px]">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch h-[calc(100vh-210px)] min-h-125">
         
         {/* Left Pane: Notes listing & Search */}
-        <div className="lg:col-span-1 border border-border bg-card/25 rounded-xl p-4 flex flex-col justify-between space-y-4 overflow-hidden h-full">
+        <div className="lg:col-span-1 border border-border bg-card/25 rounded-xl p-4 flex flex-col justify-between space-y-4 overflow-hidden h-[calc(100vh-210px)]">
           <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
             {/* Search */}
             <div className="relative">

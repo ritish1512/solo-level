@@ -192,6 +192,7 @@ export default function Sidebar() {
       <div className="flex items-center justify-between gap-2 border-t border-border/40 p-4">
         <button
           onClick={toggleTheme}
+          suppressHydrationWarning
           className="min-h-11 min-w-11 rounded-lg p-2 text-zinc-500 transition-colors hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
           aria-label="Toggle theme"
         >
