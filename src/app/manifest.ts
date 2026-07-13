@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next'
 
-export default function manifest(): MetadataRoute.Manifest {
+export default function manifest(): MetadataRoute.Manifest{
   return {
     name: 'Solo Leveling Productivity System',
     short_name: 'Solo Leveling',

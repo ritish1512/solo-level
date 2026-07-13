@@ -68,7 +68,7 @@ export async function fetchSystemDiagnostics(): Promise<SystemDiagnostics> {
   let dataSizeMb = 0
   let storageSizeMb = 0
   let objectsCount = 0
-  let collectionsList: CollectionStat[] = []
+  const collectionsList: CollectionStat[] = []
 
   if (mongoose.connection.readyState === 1 && mongoose.connection.db) {
     try {

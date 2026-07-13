@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Bell, Trash2, Plus } from 'lucide-react'
@@ -31,8 +31,12 @@ export function ReminderConfigPanel({
 }: ReminderConfigPanelProps) {
   const [localConfigs, setLocalConfigs] = useState<ReminderConfig[]>(configs)
 
-  React.useEffect(() => {
-    setLocalConfigs(configs)
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      setLocalConfigs(configs)
+    })
+
+    return () => window.cancelAnimationFrame(frame)
   }, [configs])
 
   const handleAddConfig = () => {

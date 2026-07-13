@@ -7,6 +7,7 @@ import Task, { ITask, IReminderConfig } from '@/models/Task'
 import User from '@/models/User'
 import Reminder from '@/models/Reminder'
 import { createTaskReminders, updateTaskReminders, deleteTaskReminders } from '@/services/reminderService'
+import { parseDateTimeLocalValue } from '@/lib/dateTime'
 
 export interface TaskResponse {
   success: boolean
@@ -49,7 +50,10 @@ export async function createTaskAction(data: any): Promise<TaskResponse> {
       return { success: false, error: 'Title and deadline date are required.' }
     }
 
-    const parsedDeadline = new Date(deadline)
+    const parsedDeadline = parseDateTimeLocalValue(deadline)
+    if (!parsedDeadline) {
+      return { success: false, error: 'Please provide a valid deadline.' }
+    }
 
     // Prepare reminder configurations
     let taskReminderConfigs: IReminderConfig[] = []
@@ -118,7 +122,7 @@ export async function getTasksAction(filter: string = 'All'): Promise<TaskRespon
     await dbConnect()
 
     const userId = new mongoose.Types.ObjectId(session.user.id)
-    let query: any = { user: userId }
+    const query: Record<string, unknown> = { user: userId }
 
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0)
@@ -223,7 +227,11 @@ export async function updateTaskAction(id: string, data: any): Promise<TaskRespo
     task.project = project ? new mongoose.Types.ObjectId(project) : task.project
     
     if (deadline) {
-      task.deadline = new Date(deadline)
+      const parsedDeadline = parseDateTimeLocalValue(deadline)
+      if (!parsedDeadline) {
+        return { success: false, error: 'Please provide a valid deadline.' }
+      }
+      task.deadline = parsedDeadline
     }
 
     const oldReminderOffset = task.reminderOffset

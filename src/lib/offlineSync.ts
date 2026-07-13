@@ -9,8 +9,17 @@ import { createNoteAction, updateNoteAction, toggleNotePinAction, toggleNoteArch
 import { createSubjectAction, updateSubjectAttendanceAction, logSubjectAttendanceAction, deleteSubjectAction, createAssignmentAction, updateAssignmentAction, updateAssignmentStatusAction, deleteAssignmentAction, createExamAction, updateExamDetailsAction, updateExamAction, deleteExamAction } from '@/actions/collegeActions'
 import { createTransactionAction, updateTransactionAction, deleteTransactionAction, createInvoiceAction, deleteInvoiceAction, markInvoicePaidAction } from '@/actions/financeActions'
 
+type ServerActionResult = {
+  success?: boolean
+  message?: string
+  error?: string
+  [key: string]: unknown
+}
+
+type ServerAction = (...args: any[]) => Promise<unknown>
+
 // Action Map mapping string names to Server Action functions
-export const ACTION_MAP: Record<string, Function> = {
+export const ACTION_MAP: Record<string, ServerAction> = {
   createTaskAction,
   updateTaskAction,
   deleteTaskAction,
@@ -52,24 +61,33 @@ export const ACTION_MAP: Record<string, Function> = {
 /**
  * Executes a server action. If offline, it saves the action to IndexedDB queue and returns a mock success.
  */
-export async function executeAction<T = any>(
+/**
+ * Executes a server action. If offline, it saves the action to IndexedDB queue and returns a mock success.
+ */
+export async function executeAction<T extends Record<string, unknown> = Record<string, unknown>>(
   actionName: string,
-  actionFn: Function,
-  args: any[],
-  mockGenerator?: (args: any[], tempId: string) => any
-): Promise<{ success: boolean; message?: string; error?: string; [key: string]: any }> {
+  actionFn: ServerAction,
+  args: unknown[],
+  mockGenerator?: (args: unknown[], tempId: string) => T
+): Promise<{ success: boolean; message?: string; error?: string; [key: string]: unknown } & T> {
   const isOnline = typeof navigator !== 'undefined' && navigator.onLine
+
+  // Define the explicit return type alias for clean casting
+  type ExpectedReturn = { success: boolean; message?: string; error?: string; [key: string]: unknown } & T
 
   if (isOnline) {
     try {
-      const result = await actionFn(...args)
-      return result
-    } catch (err: any) {
+      const result = (await actionFn(...args)) as ServerActionResult
+      // Cast the successful server response to the expected return type
+      return result as unknown as ExpectedReturn
+    } catch (err: unknown) {
       console.warn(`Server action ${actionName} failed, check if network error:`, err)
+      const message = err instanceof Error ? err.message : 'Server action failed'
       // Check if it is a network error
-      const isNetworkError = !navigator.onLine || err.message?.includes('fetch') || err.message?.includes('Network') || err.message?.includes('Failed to fetch')
+      const isNetworkError = !navigator.onLine || message.includes('fetch') || message.includes('Network') || message.includes('Failed to fetch')
       if (!isNetworkError) {
-        return { success: false, error: err.message || 'Server action failed' }
+        // FIX 1: Cast the application-level failure payload to the intersection type
+        return { success: false, error: message } as unknown as ExpectedReturn
       }
       // If network failure occurred, fall through to offline queue
     }
@@ -94,13 +112,15 @@ export async function executeAction<T = any>(
   }
 
   // Generate optimistic result
-  const mockData = mockGenerator ? mockGenerator(args, tempId) : {}
+  const mockData = mockGenerator ? mockGenerator(args, tempId) : ({} as T)
+  
+  // FIX 2: Correctly spread mockData and cast the complete object to ExpectedReturn
   return {
     success: true,
     message: 'Changes saved locally. They will be synchronized automatically when you are online.',
     isOfflineOptimistic: true,
     ...mockData,
-  }
+  } as unknown as ExpectedReturn
 }
 
 /**
@@ -131,7 +151,7 @@ export async function syncOfflineQueue(onProgress?: (actionName: string, success
     }
 
     try {
-      const res = await action(...item.args)
+      const res:any = await action(...item.args)
       if (res.success) {
         await removeFromQueue(item.id)
         processed++

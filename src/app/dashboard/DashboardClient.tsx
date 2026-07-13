@@ -21,6 +21,7 @@ import {
   Timer
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import TutorialGuide from '@/components/TutorialGuide'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
@@ -464,10 +465,18 @@ export default function DashboardClient({
 
         startTransition(async () => {
           try {
-            const userRes = await fetch('/api/user/profile')
-            if (userRes.ok) {
-              const data = await userRes.json()
-              setUserProfile(data)
+            const xpRes = await fetch('/api/user/award-xp', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ minutes: pomodoroMode }),
+            })
+
+            if (xpRes.ok) {
+              const userRes = await fetch('/api/user/profile')
+              if (userRes.ok) {
+                const data = await userRes.json()
+                setUserProfile(data)
+              }
             }
           } catch (err) {}
         })
@@ -719,7 +728,7 @@ export default function DashboardClient({
         (args, tempId) => ({
           timeBlock: {
             _id: tempId,
-            ...args[0],
+            ...(args[0] as Record<string, unknown>),
             isCompleted: false,
           }
         })
@@ -745,11 +754,12 @@ export default function DashboardClient({
         updateTimeBlockAction,
         [blockId, { isCompleted: !isCompleted }],
         (args) => {
-          const block = timeBlocks.find(b => b._id === args[0])
+          const updatePayload = args[1] as { isCompleted?: boolean }
+          const block = timeBlocks.find((b) => b._id === args[0])
           return {
             timeBlock: {
               ...block,
-              isCompleted: args[1].isCompleted,
+              isCompleted: updatePayload.isCompleted ?? false,
             }
           }
         }
@@ -785,8 +795,16 @@ export default function DashboardClient({
   }
 
   // 6. Calculate Dynamic Daily Score %
-  const totalHabits = habits.length
-  const completedHabits = habits.filter((h) => h.completedDates.includes(todayStr)).length
+  const todayHabits = habits.filter((habit) => {
+    const recurrenceObj = {
+      type: habit.recurrenceType ?? habit.recurrence?.type,
+      days: habit.recurrenceDays ?? habit.recurrence?.days,
+    }
+    return isHabitDueForDate(recurrenceObj, new Date())
+  })
+
+  const totalHabits = todayHabits.length
+  const completedHabits = todayHabits.filter((h) => h.completedDates.includes(todayStr)).length
 
   const totalPlannerBlocks = timeBlocks.length
   const completedPlannerBlocks = timeBlocks.filter((b) => b.isCompleted).length
@@ -811,21 +829,28 @@ export default function DashboardClient({
           </div>
         </div>
       )}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center p-6 rounded-xl border border-border bg-card/40 backdrop-blur-md gap-4">
-        <div>
-          <h2 className=" text-2xl md:text-3xl font-extrabold text-zinc-950 dark:text-white">
+      <TutorialGuide autoShow buttonLabel="Show guide" buttonClassName="sm:inline-flex" />
+      <div className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-gradient-to-r from-indigo-50/80 via-white to-sky-50/80 p-6 shadow-sm backdrop-blur-md dark:from-indigo-950/40 dark:via-zinc-900/80 dark:to-sky-950/40 md:flex-row md:items-center md:justify-between">
+        <div className="max-w-2xl">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="rounded-full border border-indigo-200 bg-indigo-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
+              Focus mode
+            </span>
+            
+          </div>
+          <h2 className="text-2xl font-extrabold text-zinc-950 dark:text-white md:text-3xl">
             Good to see you, {userProfile?.name?.split(' ')[0] || 'Monarch'}
           </h2>
-          <p className="text-zinc-500 dark:text-zinc-400 mt-1 text-sm font-medium italic">
+          <p className="mt-2 text-sm font-semibold leading-6 text-zinc-700 dark:text-zinc-300">
             &quot;{quote}&quot;
           </p>
         </div>
 
-        <div className="text-left md:text-right">
-          <p className="text-xl md:text-2xl font-bold font-mono tracking-tight text-indigo-500">
+        <div className="rounded-2xl border border-zinc-200/80 bg-white/80 p-4 text-left shadow-sm dark:border-zinc-700/70 dark:bg-zinc-900/70 md:text-right">
+          <p className="text-xl font-bold font-mono tracking-tight text-indigo-600 dark:text-indigo-400 md:text-2xl">
             {currentTime}
           </p>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 font-medium mt-0.5">
+          <p className="mt-1 text-sm font-semibold text-zinc-600 dark:text-zinc-400">
             {currentDate}
           </p>
         </div>
@@ -968,11 +993,7 @@ export default function DashboardClient({
                       onChange={handleStartAudioChange}
                       className="h-9"
                     />
-                    {startAudioUrl ? (
-                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Loaded start sound. It will play when the timer begins.</p>
-                    ) : (
-                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Optional local audio for timer start.</p>
-                    )}
+                    
                   </div>
 
                   <div>
@@ -984,11 +1005,7 @@ export default function DashboardClient({
                       onChange={handleCompletionAudioChange}
                       className="h-9"
                     />
-                    {completionAudioUrl ? (
-                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Loaded completion sound. It will play when the timer ends.</p>
-                    ) : (
-                      <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Optional local audio for timer completion.</p>
-                    )}
+                    
                   </div>
                 </div>
               </div>
@@ -998,13 +1015,11 @@ export default function DashboardClient({
               ) : (
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">Use it to improve focus and productivity.</p>
               )}
-
               <div className="flex flex-col gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-full border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-950/70 px-2 py-1">Start sound: {startAudioUrl ? 'Custom active' : 'Default'}</span>
                   <span className="rounded-full border border-zinc-200 dark:border-zinc-700 bg-white/80 dark:bg-zinc-950/70 px-2 py-1">Completion sound: {completionAudioUrl ? 'Custom active' : 'Default'}</span>
                 </div>
-                <p className="text-[11px] italic">Hover the buttons for details.</p>
               </div>
 
               {/* Buttons controls */}
@@ -1198,22 +1213,21 @@ export default function DashboardClient({
             <Flame className="w-5 h-5 text-indigo-500 animate-pulse" />
           </CardHeader>
           <CardContent className="py-4 space-y-2">
-            {habits.length === 0 ? (
+            {todayHabits.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-zinc-500 dark:text-zinc-400 text-xs italic mb-2">No habits configured.</p>
+                <p className="text-zinc-500 dark:text-zinc-400 text-xs italic mb-2">No habits due today.</p>
                 <Link href="/dashboard/habits">
                   <Button variant="outline" size="sm" className="text-xs">Setup Habit Tracker</Button>
                 </Link>
               </div>
             ) : (
-              habits.map((habit) => {
+              todayHabits.map((habit) => {
                 const recurrenceObj = {
                   type: habit.recurrenceType ?? habit.recurrence?.type,
                   days: habit.recurrenceDays ?? habit.recurrence?.days,
                 }
 
-                const isDueToday = isHabitDueForDate(recurrenceObj, new Date())
-                const isCompletedToday = isDueToday && habit.completedDates.includes(todayStr)
+                const isCompletedToday = habit.completedDates.includes(todayStr)
                 return (
                   <div
                     key={habit._id}
@@ -1226,8 +1240,8 @@ export default function DashboardClient({
                     <div className="flex items-center gap-3">
                       <button
                         onClick={() => handleToggleHabit(habit._id, recurrenceObj)}
-                        disabled={isPending || !isDueToday}
-                        className={`w-5.5 h-5.5 rounded-full border flex items-center justify-center transition-all ${isDueToday ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'} ${
+                        disabled={isPending}
+                        className={`w-5.5 h-5.5 rounded-full border flex items-center justify-center transition-all cursor-pointer ${
                           isCompletedToday
                             ? 'bg-indigo-500 border-indigo-500 text-white shadow-sm'
                             : 'border-zinc-300 dark:border-zinc-700 hover:border-indigo-500'

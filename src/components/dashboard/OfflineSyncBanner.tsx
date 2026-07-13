@@ -1,37 +1,69 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { WifiOff, RefreshCw, CheckCircle, AlertTriangle } from 'lucide-react'
 import { getQueue } from '@/lib/offlineDb'
 import { syncOfflineQueue } from '@/lib/offlineSync'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export default function OfflineSyncBanner() {
-  const [isOnline, setIsOnline] = useState(true)
+  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
   const [queueCount, setQueueCount] = useState(0)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
-  const [visible, setVisible] = useState(false)
+  const [visible, setVisible] = useState(() => (typeof navigator !== 'undefined' ? !navigator.onLine : false))
 
-  const updateQueueCount = async () => {
+  const updateQueueCount = useCallback(async () => {
     const queue = await getQueue()
     setQueueCount(queue.length)
-  }
+  }, [])
+
+  const handleSync = useCallback(async () => {
+    if (syncStatus === 'syncing') return
+    setSyncStatus('syncing')
+    setVisible(true)
+
+    try {
+      const { failed } = await syncOfflineQueue(() => {
+        void updateQueueCount()
+      })
+
+      if (failed > 0) {
+        setSyncStatus('error')
+        setTimeout(() => setVisible(false), 5000)
+      } else {
+        setSyncStatus('success')
+        setQueueCount(0)
+        setTimeout(() => setVisible(false), 3000)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('offline-sync-complete'))
+          window.location.reload()
+        }
+      }
+    } catch (err) {
+      console.error('Offline sync execution failed:', err)
+      setSyncStatus('error')
+      setTimeout(() => setVisible(false), 5000)
+    }
+  }, [syncStatus, updateQueueCount])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    setIsOnline(navigator.onLine)
-    void updateQueueCount()
+    const initialize = async () => {
+      setIsOnline(navigator.onLine)
+      await updateQueueCount()
+    }
+
+    void initialize()
 
     const handleOnline = async () => {
       setIsOnline(true)
       await updateQueueCount()
-      // If there are items, start syncing immediately
+
       const queue = await getQueue()
       if (queue.length > 0) {
         void handleSync()
       } else {
-        // Show temp success/online message
         setSyncStatus('success')
         setVisible(true)
         setTimeout(() => setVisible(false), 3000)
@@ -53,47 +85,12 @@ export default function OfflineSyncBanner() {
     window.addEventListener('offline', handleOffline)
     window.addEventListener('offline-action-queued', handleActionQueued)
 
-    // Initial check
-    if (!navigator.onLine) {
-      setVisible(true)
-    }
-
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('offline-action-queued', handleActionQueued)
     }
-  }, [])
-
-  const handleSync = async () => {
-    if (syncStatus === 'syncing') return
-    setSyncStatus('syncing')
-    setVisible(true)
-
-    try {
-      const { processed, failed } = await syncOfflineQueue((actionName, success) => {
-        console.log(`Synced ${actionName}: ${success ? 'SUCCESS' : 'FAILED'}`)
-        void updateQueueCount()
-      })
-
-      if (failed > 0) {
-        setSyncStatus('error')
-        setTimeout(() => setVisible(false), 5000)
-      } else {
-        setSyncStatus('success')
-        setQueueCount(0)
-        setTimeout(() => setVisible(false), 3000)
-        // Refresh pages by calling router.refresh() if needed, but the client state is already updated
-        if (typeof window !== 'undefined') {
-          window.location.reload()
-        }
-      }
-    } catch (err) {
-      console.error('Offline sync execution failed:', err)
-      setSyncStatus('error')
-      setTimeout(() => setVisible(false), 5000)
-    }
-  }
+  }, [handleSync, updateQueueCount])
 
   if (!visible && queueCount === 0) return null
 

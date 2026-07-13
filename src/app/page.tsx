@@ -4,7 +4,8 @@ import { auth } from '@/lib/auth'
 import { Button } from '@/components/ui/Button'
 import { ThemeToggleButton } from '@/components/ThemeToggleButton'
 import InstallButton from '@/components/InstallButton'
-import { ArrowRight, Shield, Award, Calendar, Zap, LayoutDashboard, Brain } from 'lucide-react'
+import { ArrowRight, Shield, Award, Calendar, Zap, LayoutDashboard, Brain, Sparkles } from 'lucide-react'
+import TutorialGuide from '@/components/TutorialGuide'
 
 export const metadata: Metadata = {
   title: 'Productivity Dashboard for High Achievers',
@@ -71,6 +72,7 @@ export default async function LandingPage() {
           </span>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
+          <TutorialGuide buttonLabel="Tutorial" buttonClassName="hidden sm:inline-flex" />
           <ThemeToggleButton />
           {isAuthenticated ? (
             <Link href={dashboardHref}>
@@ -93,8 +95,8 @@ export default async function LandingPage() {
       <main id="main-content" className="z-10 mx-auto flex max-w-5xl flex-1 flex-col items-center justify-center px-4 py-12 text-center sm:px-6 sm:py-16">
         <div className="flex animate-[fade-in-up_600ms_ease-out] flex-col items-center">
           {/* Enhanced contrast badge */}
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-border shadow-sm mb-6 animate-pulse text-zinc-800 dark:text-zinc-200">
-            <span className="w-2 h-2 rounded-full bg-indigo-600 dark:bg-indigo-500" />
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-white/95 dark:bg-zinc-900/95 border border-zinc-300 dark:border-border shadow-sm mb-6 text-zinc-800 dark:text-zinc-200">
+            <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full bg-indigo-600 dark:bg-indigo-500" />
             <span>Optimize Your Daily Execution</span>
           </div>
 
@@ -102,7 +104,7 @@ export default async function LandingPage() {
             The Ultimate Second Brain for High Achievers.
           </h1>
 
-          <p className="mb-10 max-w-2xl text-[clamp(1rem,2.4vw,1.25rem)] font-medium leading-relaxed text-zinc-600 [text-shadow:_0_1px_0_rgb(255_255_255_/_40%)] dark:text-zinc-400 dark:[text-shadow:none]">
+          <p className="mb-10 max-w-2xl text-[clamp(1rem,2.4vw,1.25rem)] font-semibold leading-relaxed text-zinc-700 dark:text-zinc-300">
             Eliminate mental clutter and increase velocity. Track daily habits, manage projects, log daily class study notes, catalog client invoices, and level up your skills with a built-in AI productivity coach.
           </p>
 
@@ -113,7 +115,7 @@ export default async function LandingPage() {
               </Button>
             </Link>
             <Link href={secondaryCtaHref}>
-              <Button variant="outline" size="lg" className="w-full sm:w-auto bg-white hover:bg-zinc-50 text-zinc-800 border-zinc-200 dark:bg-transparent dark:text-zinc-200 dark:border-border">
+              <Button variant="outline" size="lg" className="w-full sm:w-auto bg-white hover:bg-zinc-50 text-zinc-800 border-zinc-300 dark:bg-transparent dark:text-zinc-200 dark:border-border">
                 Access Dashboard
               </Button>
             </Link>

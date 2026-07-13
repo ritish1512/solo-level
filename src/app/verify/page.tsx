@@ -13,17 +13,24 @@ type Status = 'loading' | 'success' | 'error'
 
 function VerifyStatus() {
   const searchParams = useSearchParams()
-  const [status, setStatus] = useState<Status>('loading')
-  const [message, setMessage] = useState('Verifying your email address...')
 
   const token = searchParams.get('token')
   const email = searchParams.get('email')
 
+  const [status, setStatus] = useState<Status>(() => (token && email ? 'loading' : 'error'))
+  const [message, setMessage] = useState(() => (
+    token && email
+      ? 'Verifying your email address...'
+      : 'Invalid or missing verification details. Please verify your link.'
+  ))
+
   useEffect(() => {
     if (!token || !email) {
-      setStatus('error')
-      setMessage('Invalid or missing verification details. Please verify your link.')
-      return
+      const frame = window.requestAnimationFrame(() => {
+        setStatus('error')
+        setMessage('Invalid or missing verification details. Please verify your link.')
+      })
+      return () => window.cancelAnimationFrame(frame)
     }
 
     startTransition(async () => {

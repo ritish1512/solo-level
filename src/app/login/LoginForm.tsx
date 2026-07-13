@@ -1,6 +1,6 @@
 'use client'
 
-import React, { Suspense, useEffect, useState, useTransition } from 'react'
+import React, { useEffect, useState, useTransition } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { motion } from 'framer-motion'
@@ -100,7 +100,7 @@ export default function LoginForm() {
           router.push(callbackUrl)
           router.refresh()
         }
-      } catch (err) {
+      } catch {
         toast('An unexpected error occurred.', 'error')
       }
     })
@@ -132,7 +132,7 @@ export default function LoginForm() {
               Welcome back. Enter your credentials to access your second brain.
             </CardDescription>
             <CardDescription className="text-center text-xs">
-              If you didn't receive a verification email, please check your spam folder or request a new one.
+              If you didn&apos;t receive a verification email, please check your spam folder or request a new one.
             </CardDescription>
           </CardHeader>
           <CardContent>

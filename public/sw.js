@@ -1,114 +1,119 @@
-const CACHE_NAME = 'solo-leveling-cache-v1';
-
-// Caching only real, stable static assets on install (No dynamic code)
-const STATIC_ASSETS = [
+const CACHE_NAME = 'solo-leveling-cache-v2'
+const APP_SHELL = [
   '/',
   '/favicon.ico',
   '/icon-192x192.png',
-  '/icon-512x512.png'
-];
+  '/icon-512x512.png',
+  '/manifest.webmanifest',
+  '/dashboard',
+  '/dashboard/habits',
+  '/dashboard/tasks',
+  '/dashboard/projects',
+  '/dashboard/notes',
+  '/dashboard/college',
+  '/dashboard/finance',
+  '/login',
+  '/register'
+]
 
-// Install SW and cache immutable app shell assets
+const CACHEABLE_EXTENSIONS = ['.js', '.css', '.png', '.jpg', '.jpeg', '.svg', '.ico', '.woff', '.woff2']
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request)
+  if (cached) return cached
+
+  try {
+    const response = await fetch(request)
+    if (response && response.ok) {
+      const cache = await caches.open(CACHE_NAME)
+      cache.put(request, response.clone())
+    }
+    return response
+  } catch {
+    return caches.match('/')
+  }
+}
+
+async function networkFirst(request) {
+  try {
+    const response = await fetch(request)
+    if (response && response.ok) {
+      const cache = await caches.open(CACHE_NAME)
+      cache.put(request, response.clone())
+    }
+    return response
+  } catch {
+    const cached = await caches.match(request)
+    if (cached) return cached
+    return caches.match('/')
+  }
+}
+
+async function staleWhileRevalidate(request) {
+  const cached = await caches.match(request)
+  const networkFetch = fetch(request)
+    .then(async (response) => {
+      if (response && response.ok) {
+        const cache = await caches.open(CACHE_NAME)
+        cache.put(request, response.clone())
+      }
+      return response
+    })
+    .catch(() => cached)
+
+  return cached || networkFetch
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
-    }).then(() => {
-      return self.skipWaiting();
-    })
-  );
-});
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)).then(() => self.skipWaiting())
+  )
+})
 
-// Clean up old caches on activation
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames.map((cache) => {
-          if (cache !== CACHE_NAME) {
-            console.log('Service Worker: clearing old cache', cache);
-            return caches.delete(cache);
-          }
-        })
-      );
-    }).then(() => {
-      return self.clients.claim();
-    })
-  );
-});
+    caches.keys().then((cacheNames) => Promise.all(cacheNames.map((cache) => {
+      if (cache !== CACHE_NAME) return caches.delete(cache)
+      return null
+    }))).then(() => self.clients.claim())
+  )
+})
 
-// Fetch interception strategy
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting()
+  }
+})
+
 self.addEventListener('fetch', (event) => {
-  const request = event.request;
-  const url = new URL(request.url);
+  const request = event.request
+  const url = new URL(request.url)
 
-  // 1. STRICT SAFETY NET: Bypass absolutely everything except same-origin GET requests
-  if (request.method !== 'GET' || url.origin !== self.location.origin) {
-    return;
+  if (request.method !== 'GET' || url.origin !== self.location.origin) return
+
+  if (url.pathname.includes('/_next/webpack-hmr') || url.pathname.includes('webpack') || url.pathname.includes('hot-update') || url.pathname.startsWith('/_next/data')) {
+    event.respondWith(fetch(request))
+    return
   }
 
-  // 2. CRITICAL DEVELOPMENT AND COMPILING BYPASS
-  // Forces browser to fetch hot-reloads and dev chunks raw from network
-  if (
-    url.pathname.includes('/_next/webpack-hmr') || 
-    url.pathname.includes('webpack') ||
-    url.pathname.includes('hot-update') ||
-    url.pathname.startsWith('/_next/data')
-  ) {
-    event.respondWith(fetch(request));
-    return;
-  }
+  const isNavigationRequest = request.mode === 'navigate' || request.destination === 'document'
+  const isStaticAsset = url.pathname.startsWith('/_next/static') || url.pathname.startsWith('/fonts') || CACHEABLE_EXTENSIONS.some((ext) => url.pathname.endsWith(ext))
+  const isAppPage = url.pathname === '/' || url.pathname.startsWith('/dashboard') || url.pathname === '/login' || url.pathname === '/register'
 
-  // 3. STATIC ASSETS HANDLING (Images, Fonts, CSS, JS Bundles)
-  const isStaticAsset =
-    url.pathname.startsWith('/_next/static') ||
-    url.pathname.startsWith('/fonts') ||
-    url.pathname.endsWith('.js') ||
-    url.pathname.endsWith('.css') ||
-    url.pathname.endsWith('.png') ||
-    url.pathname.endsWith('.jpg') ||
-    url.pathname.endsWith('.ico') ||
-    url.pathname.endsWith('.woff2');
+  if (isNavigationRequest) {
+    event.respondWith(networkFirst(request))
+    return
+  }
 
   if (isStaticAsset) {
-    // For local development, change this to Network First to stop caching loops.
-    // This network-first strategy ensures dev updates show instantly while protecting production stability.
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (!response || response.status !== 200) return response;
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
-          return response;
-        })
-        .catch(() => caches.match(request)) // Fallback to cache ONLY if internet drops
-    );
-    return;
+    event.respondWith(staleWhileRevalidate(request))
+    return
   }
 
-  // 4. MAIN APP PAGES / ROUTING VIEWS (Network First, fallback to cache)
-  const isAppPage = url.pathname.startsWith('/dashboard') || url.pathname === '/';
   if (isAppPage) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (!response || response.status !== 200) return response;
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, responseClone));
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request).then((cachedResponse) => {
-            if (cachedResponse) return cachedResponse;
-            return caches.match('/'); // Return app core fallback layout if specific page missing
-          });
-        })
-    );
-    return;
+    event.respondWith(networkFirst(request))
+    return
   }
 
-  // 5. DEFAULT BACKUP STRATEGY
-  event.respondWith(
-    fetch(request).catch(() => caches.match(request))
-  );
-});
+  event.respondWith(cacheFirst(request))
+})

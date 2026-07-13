@@ -5,18 +5,21 @@ import { usePathname } from 'next/navigation'
 
 export default function LoadingOverlay() {
   const pathname = usePathname()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     // When pathname changes, show the overlay briefly to improve perceived performance
     let mounted = true
-    setLoading(true)
-    const t = setTimeout(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (mounted) setLoading(true)
+    })
+    const t = window.setTimeout(() => {
       if (mounted) setLoading(false)
     }, 500)
     return () => {
       mounted = false
-      clearTimeout(t)
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(t)
     }
   }, [pathname])
 

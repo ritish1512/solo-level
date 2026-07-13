@@ -259,22 +259,28 @@ export default function CollegeClient({
         'createSubjectAction',
         createSubjectAction,
         [subjectForm],
-        (args, tempId) => ({
-          subject: {
-            _id: tempId,
-            ...args[0],
-            attendedClasses: 0,
-            totalClasses: 0,
-            classNotes: [],
+        (args, tempId) => {
+          const input = args[0]
+          const subjectInput = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {}
+
+          return {
+            subject: {
+              _id: tempId,
+              ...subjectInput,
+              attendedClasses: 0,
+              totalClasses: 0,
+              classNotes: [],
+            }
           }
-        })
+        }
       )
       if (res.success) {
         toast('Subject added!', 'success')
-        if (res.subject) {
-          setSubjects((prev) => [...prev, res.subject])
-          setAttendanceNotes((prev) => ({ ...prev, [res.subject._id]: '' }))
-          setAttendedToday((prev) => ({ ...prev, [res.subject._id]: false }))
+        const optimisticSubject = res.subject as { _id: string } | undefined
+        if (optimisticSubject) {
+          setSubjects((prev) => [...prev, optimisticSubject as never])
+          setAttendanceNotes((prev) => ({ ...prev, [optimisticSubject._id]: '' }))
+          setAttendedToday((prev) => ({ ...prev, [optimisticSubject._id]: false }))
         }
         setSubjectForm({ name: '', code: '', reminderConfigs: [] })
         setShowAddSubject(false)
@@ -350,7 +356,7 @@ export default function CollegeClient({
         }
       )
       if (res.success) {
-        toast('Today\'s class log saved successfully.', 'success')
+        toast('Today&apos;s class log saved successfully.', 'success')
         if (res.subject) {
           setSubjects((prev) => prev.map((s) => (s._id === id ? res.subject : s)))
         }
@@ -399,7 +405,7 @@ export default function CollegeClient({
         (args, tempId) => ({
           assignment: {
             _id: tempId,
-            ...args[0],
+            ...(args[0] as Record<string, unknown>),
             status: 'Todo',
             createdAt: new Date().toISOString(),
           }
@@ -588,7 +594,7 @@ export default function CollegeClient({
         (args, tempId) => ({
           exam: {
             _id: tempId,
-            ...args[0],
+            ...(args[0] as Record<string, unknown>),
             createdAt: new Date().toISOString(),
           }
         })
@@ -646,7 +652,7 @@ export default function CollegeClient({
   const getLastLogInfo = (subject: any) => {
     const today = getTodayAttendance(subject)
     if (today) {
-      return `Today's log saved (${today.attended ? 'Attended' : 'Missed'})`
+      return `Today&apos;s log saved (${today.attended ? 'Attended' : 'Missed'})`
     }
     const last = getLastNote(subject)
     if (last) {
@@ -794,7 +800,7 @@ export default function CollegeClient({
                           variant="secondary"
                           isLoading={isPending}
                         >
-                          Save Today's Log
+                          Save Today&apos;s Log
                         </Button>
                         <Button onClick={() => handleDeleteSubject(sub._id)} size="sm" variant="destructive">
                           Remove Subject

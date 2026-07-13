@@ -30,6 +30,7 @@ import {
   updateTaskStatusAction 
 } from '@/actions/taskActions'
 import { ReminderConfigPanel } from '@/components/ui/ReminderConfigPanel'
+import { formatLocalDateTime, parseDateTimeLocalValue } from '@/lib/dateTime'
 
 interface TasksClientProps {
   initialTasks: any[]
@@ -46,15 +47,6 @@ const COLUMNS = [
 export default function TasksClient({ initialTasks }: TasksClientProps) {
   const { toast } = useToast()
   const [isPending, startTransition] = useTransition()
-  
-  const formatLocalDateTime = (date: Date) => {
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const hours = String(date.getHours()).padStart(2, '0')
-    const minutes = String(date.getMinutes()).padStart(2, '0')
-    return `${year}-${month}-${day}T${hours}:${minutes}`
-  }
 
   // Data State
   const [tasks, setTasks] = useState<any[]>(initialTasks)
@@ -135,7 +127,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
         (args, tempId) => ({
           task: {
             _id: tempId,
-            ...args[0],
+            ...(args[0] as Record<string, unknown>),
             status: 'Todo',
             createdAt: new Date().toISOString(),
           }
@@ -176,7 +168,7 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
         (args) => ({
           task: {
             ...selectedTask,
-            ...args[1],
+            ...args[1] as Record<string, unknown>,
           }
         })
       )
@@ -245,14 +237,14 @@ export default function TasksClient({ initialTasks }: TasksClientProps) {
 
   const openEditModal = (task: any) => {
     setSelectedTask(task)
-    const deadlineDate = new Date(task.deadline)
+    const deadlineDate = parseDateTimeLocalValue(task.deadline)
     setFormData({
       title: task.title,
       description: task.description || '',
       category: task.category,
       priority: task.priority,
       difficulty: task.difficulty,
-      deadline: Number.isNaN(deadlineDate.getTime()) ? formatLocalDateTime(new Date()) : formatLocalDateTime(deadlineDate),
+      deadline: deadlineDate ? formatLocalDateTime(deadlineDate) : formatLocalDateTime(new Date()),
       estimatedTime: task.estimatedTime?.toString() || '',
       tags: task.tags?.join(', ') || '',
       notes: task.notes || '',
