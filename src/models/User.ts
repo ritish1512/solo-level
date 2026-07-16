@@ -18,6 +18,7 @@ export interface IUser extends Document {
   longestStreak: number
   lastActive?: Date
   lastHabitReminderDate?: Date // Track last daily habit reminder
+  installedFeatures?: string[]
   createdAt: Date
   updatedAt: Date
 }
@@ -98,12 +99,27 @@ const UserSchema: Schema<IUser> = new Schema(
       type: Date,
       required: false,
     },
+    installedFeatures: {
+      type: [String],
+      default: ['dashboard', 'tasks', 'habits', 'notifications', 'leaderboard'],
+    },
   },
   {
     timestamps: true,
   }
 )
 
-const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>('User', UserSchema)
+let User: Model<IUser>
+
+if (mongoose.models.User) {
+  if ('installedFeatures' in mongoose.models.User.schema.paths) {
+    User = mongoose.models.User
+  } else {
+    delete (mongoose.models as any).User
+    User = mongoose.model<IUser>('User', UserSchema)
+  }
+} else {
+  User = mongoose.model<IUser>('User', UserSchema)
+}
 
 export default User

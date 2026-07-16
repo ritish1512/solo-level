@@ -3,10 +3,13 @@ import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import Transaction from '@/models/Transaction'
 import FinanceClient from './FinanceClient'
+import { verifyFeature } from '@/lib/checkFeature'
 
 export const dynamic = 'force-dynamic'
 
 export default async function FinancePage() {
+  await verifyFeature('finance')
+  
   const session = await auth()
   
   if (!session || !session.user) {

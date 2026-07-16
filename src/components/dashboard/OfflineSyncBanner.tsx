@@ -7,10 +7,10 @@ import { syncOfflineQueue } from '@/lib/offlineSync'
 import { motion, AnimatePresence } from 'framer-motion'
 
 export default function OfflineSyncBanner() {
-  const [isOnline, setIsOnline] = useState(() => (typeof navigator !== 'undefined' ? navigator.onLine : true))
+  const [isOnline, setIsOnline] = useState(true)
   const [queueCount, setQueueCount] = useState(0)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
-  const [visible, setVisible] = useState(() => (typeof navigator !== 'undefined' ? !navigator.onLine : false))
+  const [visible, setVisible] = useState(false)
 
   const updateQueueCount = useCallback(async () => {
     const queue = await getQueue()
@@ -50,7 +50,9 @@ export default function OfflineSyncBanner() {
     if (typeof window === 'undefined') return
 
     const initialize = async () => {
-      setIsOnline(navigator.onLine)
+      const online = navigator.onLine
+      setIsOnline(online)
+      setVisible(!online)
       await updateQueueCount()
     }
 

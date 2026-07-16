@@ -38,9 +38,11 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="flex min-h-dvh overflow-x-hidden bg-background text-foreground">
+    <div className="flex min-h-dvh overflow-x-hidden bg-background text-foreground" suppressHydrationWarning>
       {/* Sidebar navigation */}
-      <Sidebar />
+      <div suppressHydrationWarning>
+        <Sidebar />
+      </div>
 
       {/* Main workspace */}
       <div className="relative flex min-w-0 flex-1 flex-col md:h-screen md:overflow-hidden">

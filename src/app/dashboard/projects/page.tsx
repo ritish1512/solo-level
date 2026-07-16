@@ -5,10 +5,13 @@ import Project from '@/models/Project'
 import Bug from '@/models/Bug'
 import Task from '@/models/Task'
 import ProjectsClient from './ProjectsClient'
+import { verifyFeature } from '@/lib/checkFeature'
 
 export const dynamic = 'force-dynamic'
 
 export default async function ProjectsPage() {
+  await verifyFeature('projects')
+  
   const session = await auth()
   
   if (!session || !session.user) {

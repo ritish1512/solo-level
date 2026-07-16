@@ -3,10 +3,13 @@ import { auth } from '@/lib/auth'
 import dbConnect from '@/lib/mongodb'
 import { Subject, Assignment, Exam } from '@/models/College'
 import CollegeClient from './CollegeClient'
+import { verifyFeature } from '@/lib/checkFeature'
 
 export const dynamic = 'force-dynamic'
 
 export default async function CollegePage() {
+  await verifyFeature('college')
+  
   const session = await auth()
   
   if (!session || !session.user) {

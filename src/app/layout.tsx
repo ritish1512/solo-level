@@ -96,8 +96,8 @@ export default function RootLayout({
   }
 
   return (
-    <html lang="en" className="dark" style={{ colorScheme: 'dark' }}>
-      <body className="antialiased min-h-screen bg-background text-foreground transition-colors duration-300">
+    <html lang="en" className="dark" style={{ colorScheme: 'dark' }} suppressHydrationWarning>
+      <body className="antialiased min-h-screen bg-background text-foreground transition-colors duration-300" suppressHydrationWarning>
         <a href="#main-content" className="skip-link">
           Skip to content
         </a>

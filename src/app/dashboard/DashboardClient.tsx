@@ -18,7 +18,8 @@ import {
   AlertCircle, 
   ChevronRight,
   PlusSquare,
-  Timer
+  Timer,
+  Pencil
 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import TutorialGuide from '@/components/TutorialGuide'
@@ -52,6 +53,16 @@ const QUOTES = [
   "The only way to get stronger is to keep fighting."
 ]
 
+type DashboardWidgetKey = 'dailyScore' | 'pomodoro' | 'schedule'
+
+const DEFAULT_WIDGET_VISIBILITY: Record<DashboardWidgetKey, boolean> = {
+  dailyScore: true,
+  pomodoro: true,
+  schedule: true,
+}
+
+const DASHBOARD_WIDGET_STORAGE_KEY = 'solo-leveling-dashboard-widgets'
+
 export default function DashboardClient({
   initialUserProfile,
   initialTasks,
@@ -65,6 +76,8 @@ export default function DashboardClient({
   const [currentTime, setCurrentTime] = useState('')
   const [currentDate, setCurrentDate] = useState('')
   const [quote, setQuote] = useState('')
+  const [showWidgetEditor, setShowWidgetEditor] = useState(false)
+  const [widgetVisibility, setWidgetVisibility] = useState<Record<DashboardWidgetKey, boolean>>(DEFAULT_WIDGET_VISIBILITY)
 
   useEffect(() => {
     const updateClock = () => {
@@ -94,6 +107,32 @@ export default function DashboardClient({
     const randomQuote = QUOTES[Math.floor(Math.random() * QUOTES.length)]
     setQuote(randomQuote)
   }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    try {
+      const stored = window.localStorage.getItem(DASHBOARD_WIDGET_STORAGE_KEY)
+      if (!stored) return
+
+      const parsed = JSON.parse(stored) as Partial<Record<DashboardWidgetKey, boolean>>
+      setWidgetVisibility({
+        ...DEFAULT_WIDGET_VISIBILITY,
+        ...parsed,
+      })
+    } catch (error) {
+      console.error('Failed to restore dashboard widget visibility:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    window.localStorage.setItem(DASHBOARD_WIDGET_STORAGE_KEY, JSON.stringify(widgetVisibility))
+  }, [widgetVisibility])
+
+  const toggleWidgetVisibility = (key: DashboardWidgetKey) => {
+    setWidgetVisibility((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
 
   // Data states
   const [userProfile, setUserProfile] = useState(initialUserProfile)
@@ -830,13 +869,64 @@ export default function DashboardClient({
         </div>
       )}
       <TutorialGuide autoShow buttonLabel="Show guide" buttonClassName="sm:inline-flex" />
+      
       <div className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-gradient-to-r from-indigo-50/80 via-white to-sky-50/80 p-6 shadow-sm backdrop-blur-md dark:from-indigo-950/40 dark:via-zinc-900/80 dark:to-sky-950/40 md:flex-row md:items-center md:justify-between">
         <div className="max-w-2xl">
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-indigo-200 bg-indigo-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/15 dark:text-indigo-300">
               Focus mode
             </span>
-            
+            <div className="flex justify-end">
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setShowWidgetEditor((prev) => !prev)}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-background/90 text-zinc-600 shadow-sm transition hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            aria-label="Customize dashboard widgets"
+            aria-expanded={showWidgetEditor}
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+
+          <AnimatePresence>
+            {showWidgetEditor && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="fixed left-0 md:left-50 top-20 md:top-0 z-99 w-64 rounded-2xl border border-border/70 bg-background/95 p-3 shadow-xl backdrop-blur"
+              >
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-500">
+                  Show on dashboard
+                </p>
+                <div className="mt-3 space-y-2">
+                  {([
+                    { key: 'dailyScore', label: 'Daily score' },
+                    { key: 'pomodoro', label: 'Pomodoro focus' },
+                    { key: 'schedule', label: 'Today&apos;s schedule' },
+                  ] as Array<{ key: DashboardWidgetKey; label: string }>).map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => toggleWidgetVisibility(item.key)}
+                      className={`flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition ${
+                        widgetVisibility[item.key]
+                          ? 'border-indigo-200 bg-indigo-50 text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200'
+                          : 'border-border/70 bg-card/70 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span className="text-sm font-medium">{item.label}</span>
+                      <span className={`flex h-5 w-5 items-center justify-center rounded border ${widgetVisibility[item.key] ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-zinc-300 text-transparent dark:border-zinc-600'}`}>
+                        {widgetVisibility[item.key] ? <Check className="h-3.5 w-3.5" /> : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
           </div>
           <h2 className="text-2xl font-extrabold text-zinc-950 dark:text-white md:text-3xl">
             Good to see you, {userProfile?.name?.split(' ')[0] || 'Monarch'}
@@ -862,8 +952,8 @@ export default function DashboardClient({
         {/* Left Side: Score & Focus Timer */}
         <div className="space-y-6 flex flex-col">
           
-          {/* Daily Completion Score */}
-          <Card className="border-border bg-card/30 flex-1">
+          {widgetVisibility.dailyScore && (
+            <Card className="border-border bg-card/30 flex-1">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Daily Score</CardTitle>
               <CardDescription className="text-xs">Your consistency rate for today</CardDescription>
@@ -911,10 +1001,11 @@ export default function DashboardClient({
                 </span>
               </div>
             </CardContent>
-          </Card>
+            </Card>
+          )}
 
-          {/* Pomodoro Focus Timer */}
-          <Card className="border-border bg-card/30">
+          {widgetVisibility.pomodoro && (
+            <Card className="border-border bg-card/30 z-0">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Pomodoro focus</CardTitle>
@@ -1043,11 +1134,12 @@ export default function DashboardClient({
                 </Button>
               </div>
             </CardContent>
-          </Card>
+            </Card>
+          )}
         </div>
 
-        {/* Center Side: Time-blocked daily schedule planner */}
-        <Card className="border-border bg-card/30 md:col-span-2 flex flex-col">
+        {widgetVisibility.schedule ? (
+          <Card className="border-border bg-card/30 md:col-span-2 flex flex-col">
           <CardHeader className="pb-2 border-b border-border/40 flex flex-row items-center justify-between">
             <div>
               <CardTitle className="text-sm font-bold uppercase tracking-wider text-zinc-500">Today&apos;s Schedule</CardTitle>
@@ -1197,7 +1289,12 @@ export default function DashboardClient({
               )}
             </div>
           </CardContent>
-        </Card>
+          </Card>
+        ) : (
+          <div className="flex items-center justify-center rounded-2xl border border-dashed border-border/70 bg-card/30 p-8 text-center text-sm text-zinc-500 md:col-span-2 dark:text-zinc-400">
+            Choose a widget to display from the pencil menu.
+          </div>
+        )}
       </div>
 
       {/* Grid bottom elements: Habits & Deadlines */}
